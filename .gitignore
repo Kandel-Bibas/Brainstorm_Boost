@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+
+# Environment
+.env
+
+# Database & data
+*.db
+chroma_db/
+
+# Exports (generated)
+exports/
+
+# Frontend build
+frontend/node_modules/
+frontend/dist/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Superpowers
+.superpowers/
