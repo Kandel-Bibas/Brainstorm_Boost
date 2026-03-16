@@ -6,3 +6,5 @@ python-multipart==0.0.12
 python-dotenv==1.0.1
 openai>=1.0.0
 httpx>=0.25.0
+faster-whisper>=1.0.0
+pyannote.audio>=3.0.0
