@@ -103,4 +103,43 @@ export const api = {
     if (!res.ok) throw new Error((await res.json()).detail);
     return res.json();
   },
+
+  async getReadAhead(agenda: string, participants: string[], provider?: string) {
+    const res = await fetch(`${BASE}/api/prep/read-ahead`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agenda, participants, provider }),
+    });
+    if (!res.ok) throw new Error((await res.json()).detail);
+    return res.json();
+  },
+
+  async getRecommendedParticipants(agenda: string) {
+    const res = await fetch(`${BASE}/api/prep/recommend-participants`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agenda }),
+    });
+    if (!res.ok) throw new Error((await res.json()).detail);
+    return res.json();
+  },
+
+  async getOpenItems(participant?: string) {
+    const url = participant
+      ? `${BASE}/api/prep/open-items?participant=${encodeURIComponent(participant)}`
+      : `${BASE}/api/prep/open-items`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error((await res.json()).detail);
+    return res.json();
+  },
+
+  async updateActionItemStatus(itemId: string, status: 'completed' | 'cancelled') {
+    const res = await fetch(`${BASE}/api/prep/action-items/${itemId}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    if (!res.ok) throw new Error((await res.json()).detail);
+    return res.json();
+  },
 };

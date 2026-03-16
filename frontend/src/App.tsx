@@ -6,6 +6,7 @@ import { UploadView } from '@/components/upload/UploadView'
 import { ReviewView } from '@/components/review/ReviewView'
 import { QueryView } from '@/components/query/QueryView'
 import { MeetingsView } from '@/components/meetings/MeetingsView'
+import { PrepView } from '@/components/prep/PrepView'
 import type { AiOutput } from '@/lib/api'
 
 const queryClient = new QueryClient({
@@ -47,6 +48,7 @@ export default function App() {
           {view === 'review' && currentMeetingId && currentAiOutput && (
             <ReviewView meetingId={currentMeetingId} aiOutput={currentAiOutput} />
           )}
+          {view === 'prepare' && <PrepView />}
           {view === 'query' && <QueryView />}
           {view === 'meetings' && (
             <MeetingsView onSelectMeeting={handleSelectMeeting} />
