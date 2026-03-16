@@ -1,0 +1,29 @@
+from pathlib import Path
+
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+
+from config import EXPORTS_DIR
+from database import init_db
+from routes import upload, analyze, meetings
+
+app = FastAPI(title="Brainstorm Boost", version="0.2.0")
+
+app.mount("/exports", StaticFiles(directory=str(EXPORTS_DIR)), name="exports")
+
+# Register routers
+app.include_router(upload.router)
+app.include_router(analyze.router)
+app.include_router(meetings.router)
+
+
+@app.on_event("startup")
+def startup():
+    init_db()
+
+
+@app.get("/", response_class=HTMLResponse)
+def serve_index():
+    index_path = Path(__file__).parent / "static" / "index.html"
+    return HTMLResponse(content=index_path.read_text())
