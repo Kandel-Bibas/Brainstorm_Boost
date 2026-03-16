@@ -352,7 +352,7 @@ def analyze_transcript(utterances: list, provider: str = None) -> dict:
         raise ValueError(f"Unknown provider: {provider}")
 
 
-def generate(prompt: str, provider: str = None) -> dict:
+def generate(prompt: str, provider: str = None, system_prompt: str = None) -> dict:
     """Send a free-form prompt to an LLM and return parsed JSON response.
 
     Unlike analyze_transcript() which formats utterances into the meeting analysis
@@ -366,11 +366,13 @@ def generate(prompt: str, provider: str = None) -> dict:
             raise ValueError("No LLM provider configured")
         provider = available[0]
 
+    effective_system = system_prompt if system_prompt is not None else GENERAL_SYSTEM_PROMPT
+
     if provider == "anthropic":
-        return _analyze_with_anthropic(prompt, system_prompt=GENERAL_SYSTEM_PROMPT)
+        return _analyze_with_anthropic(prompt, system_prompt=effective_system)
     elif provider == "gemini":
-        return _analyze_with_gemini(prompt, system_prompt=GENERAL_SYSTEM_PROMPT)
+        return _analyze_with_gemini(prompt, system_prompt=effective_system)
     elif provider == "ollama":
-        return _analyze_with_ollama(prompt, system_prompt=GENERAL_SYSTEM_PROMPT)
+        return _analyze_with_ollama(prompt, system_prompt=effective_system)
     else:
         raise ValueError(f"Unknown provider: {provider}")
