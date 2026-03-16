@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { ChevronRight, Home, Loader2, MessageCircle, BookOpen, Download, AlertCircle } from 'lucide-react'
+import { ChevronRight, Home, Loader2, MessageCircle, BookOpen, Download, AlertCircle, Database, DatabaseZap } from 'lucide-react'
+import { toast } from 'sonner'
 import { api, type AiOutput } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -20,6 +21,8 @@ export function MeetingDetail({ meetingId, onBack, onOpenChat, onPrepareFollowUp
   const [aiOutput, setAiOutput] = useState<AiOutput | null>(null)
   const [approved, setApproved] = useState(false)
   const [exportLinks, setExportLinks] = useState<{ md?: string; json?: string }>({})
+  const [indexed, setIndexed] = useState<boolean | null>(null)
+  const [indexing, setIndexing] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -37,6 +40,13 @@ export function MeetingDetail({ meetingId, onBack, onOpenChat, onPrepareFollowUp
             setApproved(true)
           }
         }
+        // Check memory status
+        try {
+          const memStatus = await api.getMemoryStatus(meetingId)
+          if (!cancelled) setIndexed(memStatus.indexed)
+        } catch {
+          // ChromaDB might not be available yet
+        }
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Failed to load meeting')
@@ -52,6 +62,25 @@ export function MeetingDetail({ meetingId, onBack, onOpenChat, onPrepareFollowUp
   const handleApprove = (exports: { md?: string; json?: string }) => {
     setApproved(true)
     setExportLinks(exports)
+  }
+
+  const handleToggleMemory = async () => {
+    setIndexing(true)
+    try {
+      if (indexed) {
+        await api.removeMeetingFromMemory(meetingId)
+        setIndexed(false)
+        toast.success('Removed from knowledge base')
+      } else {
+        await api.indexMeeting(meetingId)
+        setIndexed(true)
+        toast.success('Added to knowledge base')
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update knowledge base')
+    } finally {
+      setIndexing(false)
+    }
   }
 
   if (loading) {
@@ -83,18 +112,43 @@ export function MeetingDetail({ meetingId, onBack, onOpenChat, onPrepareFollowUp
 
   return (
     <div className="space-y-6">
-      {/* Breadcrumb */}
-      <nav className="flex items-center gap-2 text-sm text-muted-foreground">
-        <button
-          onClick={onBack}
-          className="flex items-center gap-1 transition-colors hover:text-foreground"
-        >
-          <Home className="size-4" />
-          Home
-        </button>
-        <ChevronRight className="size-3.5" />
-        <span className="text-foreground">{meetingTitle}</span>
-      </nav>
+      {/* Breadcrumb + Memory toggle */}
+      <div className="flex items-center justify-between">
+        <nav className="flex items-center gap-2 text-sm text-muted-foreground">
+          <button
+            onClick={onBack}
+            className="flex items-center gap-1 transition-colors hover:text-foreground"
+          >
+            <Home className="size-4" />
+            Home
+          </button>
+          <ChevronRight className="size-3.5" />
+          <span className="text-foreground">{meetingTitle}</span>
+        </nav>
+
+        {aiOutput && indexed !== null && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleToggleMemory}
+            disabled={indexing}
+            className={`gap-2 rounded-xl border-border/50 text-xs ${
+              indexed
+                ? 'bg-primary/10 text-primary hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30'
+                : 'hover:bg-primary/10 hover:text-primary hover:border-primary/30'
+            }`}
+          >
+            {indexing ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : indexed ? (
+              <DatabaseZap className="size-3.5" />
+            ) : (
+              <Database className="size-3.5" />
+            )}
+            {indexed ? 'In Knowledge Base' : 'Add to Knowledge Base'}
+          </Button>
+        )}
+      </div>
 
       {/* No AI output state */}
       {!aiOutput && (

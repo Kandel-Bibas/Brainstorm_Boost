@@ -100,6 +100,34 @@ class MeetingMemory:
             metadatas=metadatas,
         )
 
+    def is_meeting_indexed(self, meeting_id: str) -> bool:
+        """Check if a meeting has any items in ChromaDB."""
+        if self._collection.count() == 0:
+            return False
+        try:
+            results = self._collection.get(
+                where={"meeting_id": meeting_id},
+                limit=1,
+            )
+            return len(results["ids"]) > 0
+        except Exception:
+            return False
+
+    def remove_meeting(self, meeting_id: str) -> int:
+        """Remove all indexed items for a meeting from ChromaDB. Returns count removed."""
+        if self._collection.count() == 0:
+            return 0
+        try:
+            results = self._collection.get(
+                where={"meeting_id": meeting_id},
+            )
+            ids_to_delete = results["ids"]
+            if ids_to_delete:
+                self._collection.delete(ids=ids_to_delete)
+            return len(ids_to_delete)
+        except Exception:
+            return 0
+
     def query(self, question: str, top_k: int = 5) -> list[dict]:
         """Semantic search across all indexed meetings."""
         if self._collection.count() == 0:

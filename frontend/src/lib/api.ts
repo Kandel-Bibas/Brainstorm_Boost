@@ -158,6 +158,24 @@ export const api = {
     return res.json();
   },
 
+  async getMemoryStatus(meetingId: string) {
+    const res = await fetch(`${BASE}/api/memory/${meetingId}/status`);
+    if (!res.ok) throw new Error((await res.json()).detail);
+    return res.json() as Promise<{ meeting_id: string; indexed: boolean }>;
+  },
+
+  async indexMeeting(meetingId: string) {
+    const res = await fetch(`${BASE}/api/memory/${meetingId}/index`, { method: 'POST' });
+    if (!res.ok) throw new Error((await res.json()).detail);
+    return res.json();
+  },
+
+  async removeMeetingFromMemory(meetingId: string) {
+    const res = await fetch(`${BASE}/api/memory/${meetingId}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error((await res.json()).detail);
+    return res.json();
+  },
+
   async updateActionItemStatus(itemId: string, status: 'completed' | 'cancelled') {
     const res = await fetch(`${BASE}/api/prep/action-items/${itemId}/status`, {
       method: 'POST',
