@@ -1,16 +1,18 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Radio, Loader2, Monitor, Eye, ExternalLink } from 'lucide-react'
+import { Radio, Loader2, Monitor, Eye, ExternalLink, Sparkles, ArrowRight, Users } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { RoomView } from './RoomView'
 import { ModeratorView } from './ModeratorView'
 import type { Utterance } from './RoomView'
 import type { Idea } from './IdeaPanel'
 import type { ParticipationStat, ContextItem } from './ModeratorView'
+import { cn } from '@/lib/utils'
 
 type SessionPhase = 'setup' | 'active' | 'ended'
 
@@ -228,43 +230,56 @@ export function LiveView() {
   // Setup phase
   if (phase === 'setup') {
     return (
-      <div className="space-y-6">
+      <div className="space-y-8">
+        {/* Header */}
         <div>
-          <h2 className="text-2xl font-semibold text-slate-900">Live Meeting</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Start a live brainstorming session with real-time transcription and analytics.
+          <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-chart-5/10 px-3 py-1.5 text-sm font-medium text-chart-5 ring-1 ring-chart-5/20">
+            <Radio className="size-4" />
+            Live Brainstorming
+          </div>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">
+            Start a live session
+          </h1>
+          <p className="mt-2 text-lg text-muted-foreground">
+            Real-time transcription, participation tracking, and collaborative ideation.
           </p>
         </div>
 
-        <Card>
-          <CardContent className="pt-6 space-y-4">
+        <Card className="glass border-border/50 overflow-hidden">
+          <CardContent className="p-6 space-y-5">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">
+              <label className="text-sm font-medium text-foreground">
                 Meeting Agenda
               </label>
               <Textarea
                 value={agenda}
                 onChange={(e) => setAgenda(e.target.value)}
                 placeholder="What will this meeting cover?"
-                className="min-h-[100px] resize-none"
+                className="min-h-28 resize-none border-border/50 bg-secondary/30 text-base placeholder:text-muted-foreground/60 focus:border-primary/50"
               />
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">
-                Participants (comma-separated)
+              <label className="text-sm font-medium text-foreground">
+                Participants
               </label>
               <Input
                 value={participantsRaw}
                 onChange={(e) => setParticipantsRaw(e.target.value)}
                 placeholder="Alice, Bob, Carol..."
+                className="border-border/50 bg-secondary/30 placeholder:text-muted-foreground/60 focus:border-primary/50"
               />
+              <p className="text-xs text-muted-foreground">Comma-separated names</p>
             </div>
 
             <Button
               onClick={handleStart}
               disabled={!agenda.trim() || loading}
-              className="gap-2 bg-blue-600 px-6 text-white hover:bg-blue-700"
+              className={cn(
+                'gap-2 rounded-xl px-6',
+                'bg-chart-5 text-white hover:bg-chart-5/90',
+                agenda.trim() && !loading && 'glow-danger'
+              )}
             >
               {loading ? (
                 <Loader2 className="size-4 animate-spin" />
@@ -272,16 +287,57 @@ export function LiveView() {
                 <Radio className="size-4" />
               )}
               {loading ? 'Starting...' : 'Start Live Session'}
+              <ArrowRight className="size-4" />
             </Button>
           </CardContent>
         </Card>
 
+        {/* Feature cards */}
+        <div className="grid gap-4 md:grid-cols-3">
+          {[
+            {
+              icon: Radio,
+              title: 'Live Transcription',
+              description: 'Real-time speech-to-text capture',
+              color: 'text-chart-5',
+              bg: 'bg-chart-5/10',
+            },
+            {
+              icon: Users,
+              title: 'Participation Tracking',
+              description: 'Monitor who\'s speaking and balance',
+              color: 'text-primary',
+              bg: 'bg-primary/10',
+            },
+            {
+              icon: Sparkles,
+              title: 'Idea Voting',
+              description: 'Anonymous idea submission and voting',
+              color: 'text-chart-4',
+              bg: 'bg-chart-4/10',
+            },
+          ].map((feature) => (
+            <div
+              key={feature.title}
+              className="glass glass-hover rounded-xl border border-border/50 p-5"
+            >
+              <div className={cn('mb-3 inline-flex rounded-lg p-2', feature.bg)}>
+                <feature.icon className={cn('size-5', feature.color)} />
+              </div>
+              <h3 className="font-semibold text-foreground">{feature.title}</h3>
+              <p className="mt-1 text-sm text-muted-foreground">{feature.description}</p>
+            </div>
+          ))}
+        </div>
+
         {/* Empty state */}
         {!loading && (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <Radio className="mb-4 size-12 text-slate-300" />
-            <p className="text-sm text-slate-400">
-              Set up your meeting agenda and start a live session.
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <div className="mb-6 flex size-20 items-center justify-center rounded-2xl bg-secondary/50 ring-1 ring-border">
+              <Radio className="size-9 text-muted-foreground/50" />
+            </div>
+            <p className="text-muted-foreground">
+              Configure your meeting above to start a live session.
             </p>
           </div>
         )}
@@ -292,29 +348,34 @@ export function LiveView() {
   // Ended phase
   if (phase === 'ended') {
     return (
-      <div className="space-y-6">
+      <div className="space-y-8">
         <div>
-          <h2 className="text-2xl font-semibold text-slate-900">Session Ended</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Your live session has been saved. A meeting record has been created.
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">Session Ended</h1>
+          <p className="mt-2 text-lg text-muted-foreground">
+            Your live session has been saved.
           </p>
         </div>
 
-        <Card>
-          <CardContent className="flex flex-col items-center gap-4 py-12">
-            <div className="flex size-16 items-center justify-center rounded-full bg-emerald-100">
-              <Radio className="size-8 text-emerald-600" />
+        <Card className="glass border-border/50 overflow-hidden">
+          <CardContent className="flex flex-col items-center gap-6 py-16">
+            <div className="relative">
+              <div className="absolute inset-0 rounded-full bg-chart-3/20 blur-xl" />
+              <div className="relative flex size-20 items-center justify-center rounded-2xl bg-chart-3/10 ring-1 ring-chart-3/20">
+                <Radio className="size-9 text-chart-3" />
+              </div>
             </div>
-            <h3 className="text-lg font-semibold text-slate-800">
-              Meeting Created
-            </h3>
-            <p className="text-sm text-slate-500">
-              Session <span className="font-mono font-medium">{joinCode}</span> has been
-              saved. You can review it in the Meetings tab.
-            </p>
+            <div className="text-center">
+              <h3 className="text-xl font-semibold text-foreground">
+                Meeting Saved
+              </h3>
+              <p className="mt-2 text-muted-foreground">
+                Session <span className="font-mono font-semibold text-primary">{joinCode}</span> has been
+                recorded and saved to your history.
+              </p>
+            </div>
             <Button
               variant="outline"
-              className="gap-2"
+              className="gap-2 rounded-xl border-border/50"
               onClick={() => setPhase('setup')}
             >
               <ExternalLink className="size-4" />
@@ -328,18 +389,24 @@ export function LiveView() {
 
   // Active phase
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="size-2 animate-pulse rounded-full bg-red-500" />
-          <h2 className="text-lg font-semibold text-slate-900">Live Session</h2>
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <span className="absolute -inset-1 animate-ping rounded-full bg-chart-5/50" />
+            <span className="relative size-3 rounded-full bg-chart-5 block" />
+          </div>
+          <h2 className="text-xl font-bold text-foreground">Live Session</h2>
+          <Badge className="bg-chart-5/10 text-chart-5 border-chart-5/20">
+            Recording
+          </Badge>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <Button
             variant="outline"
             size="sm"
             onClick={() => setShowModerator((prev) => !prev)}
-            className="gap-1.5"
+            className="gap-2 rounded-xl border-border/50"
           >
             {showModerator ? (
               <>
@@ -353,7 +420,7 @@ export function LiveView() {
               </>
             )}
           </Button>
-          <span className="text-xs text-slate-400">Ctrl+M to toggle</span>
+          <span className="text-xs text-muted-foreground">Ctrl+M</span>
         </div>
       </div>
 

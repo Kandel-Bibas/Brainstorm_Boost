@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Badge } from '@/components/ui/badge'
+import { cn } from '@/lib/utils'
 
 export interface Idea {
   id: string
@@ -37,19 +39,25 @@ export function IdeaPanel({ ideas, onSubmit, onVote }: IdeaPanelProps) {
   const sorted = [...ideas].sort((a, b) => b.votes - a.votes)
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center gap-2">
-          <Lightbulb className="size-5 text-amber-500" />
-          <CardTitle className="text-base">Idea Board</CardTitle>
+    <Card className="glass border-border/50">
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-3">
+          <div className="flex size-9 items-center justify-center rounded-lg bg-chart-4/10">
+            <Lightbulb className="size-5 text-chart-4" />
+          </div>
+          <div>
+            <CardTitle className="text-base">Idea Board</CardTitle>
+            <p className="text-sm text-muted-foreground">Anonymous submissions</p>
+          </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex gap-2">
+      <CardContent className="space-y-4">
+        <div className="flex gap-3">
           <Input
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="Submit an idea anonymously..."
+            placeholder="Share an idea anonymously..."
+            className="border-border/50 bg-secondary/30 placeholder:text-muted-foreground/60 focus:border-primary/50"
             onKeyDown={(e) => {
               if (e.key === 'Enter') handleSubmit()
             }}
@@ -57,40 +65,54 @@ export function IdeaPanel({ ideas, onSubmit, onVote }: IdeaPanelProps) {
           <Button
             onClick={handleSubmit}
             disabled={!text.trim()}
-            size="sm"
-            className="gap-1.5 bg-amber-600 text-white hover:bg-amber-700"
+            className="gap-2 rounded-xl bg-chart-4 text-white hover:bg-chart-4/90"
           >
-            <Send className="size-3.5" />
+            <Send className="size-4" />
             Submit
           </Button>
         </div>
 
         {sorted.length === 0 ? (
-          <p className="py-4 text-center text-sm text-slate-400">
-            No ideas yet. Be the first!
-          </p>
+          <div className="flex flex-col items-center justify-center py-10 text-center">
+            <div className="mb-3 flex size-12 items-center justify-center rounded-xl bg-secondary/50">
+              <Lightbulb className="size-6 text-muted-foreground/50" />
+            </div>
+            <p className="text-muted-foreground">No ideas yet. Be the first!</p>
+          </div>
         ) : (
           <ScrollArea className="max-h-64">
-            <ul className="space-y-2">
-              {sorted.map((idea) => {
+            <ul className="space-y-2 pr-4">
+              {sorted.map((idea, index) => {
                 const hasVoted = votedIds.has(idea.id)
                 return (
                   <li
                     key={idea.id}
-                    className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 px-3 py-2"
+                    className={cn(
+                      'flex items-center justify-between rounded-xl border border-border/50 bg-secondary/30 px-4 py-3 transition-all',
+                      index === 0 && ideas.length > 1 && 'border-chart-4/30 bg-chart-4/5'
+                    )}
                   >
-                    <span className="text-sm text-slate-700">{idea.text}</span>
+                    <span className="text-foreground">{idea.text}</span>
                     <button
                       onClick={() => handleVote(idea.id)}
                       disabled={hasVoted}
-                      className={`flex items-center gap-1 rounded px-2 py-1 text-xs font-medium transition-colors ${
+                      className={cn(
+                        'flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition-all',
                         hasVoted
-                          ? 'cursor-default text-blue-400'
-                          : 'text-slate-400 hover:bg-blue-50 hover:text-blue-600'
-                      }`}
+                          ? 'cursor-default text-primary'
+                          : 'text-muted-foreground hover:bg-primary/10 hover:text-primary'
+                      )}
                     >
-                      <ThumbsUp className="size-3.5" />
-                      {idea.votes}
+                      <ThumbsUp className={cn('size-4', hasVoted && 'fill-current')} />
+                      <Badge 
+                        variant="secondary" 
+                        className={cn(
+                          'px-2',
+                          hasVoted ? 'bg-primary/10 text-primary' : 'bg-secondary/50'
+                        )}
+                      >
+                        {idea.votes}
+                      </Badge>
                     </button>
                   </li>
                 )

@@ -9,6 +9,12 @@ import {
   Loader2,
   Sparkles,
   Quote,
+  Calendar,
+  Users,
+  Clock,
+  Target,
+  AlertCircle,
+  ListChecks,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, type AiOutput } from '@/lib/api'
@@ -34,13 +40,14 @@ interface ReviewViewProps {
 // --- Confidence / Severity badge ---
 
 function LevelBadge({ level }: { level: 'high' | 'medium' | 'low' }) {
-  const styles: Record<string, string> = {
-    high: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-    medium: 'bg-amber-100 text-amber-700 border-amber-200',
-    low: 'bg-red-100 text-red-700 border-red-200',
+  const styles: Record<string, { bg: string; text: string }> = {
+    high: { bg: 'bg-chart-3/10', text: 'text-chart-3' },
+    medium: { bg: 'bg-chart-4/10', text: 'text-chart-4' },
+    low: { bg: 'bg-chart-5/10', text: 'text-chart-5' },
   }
+  const style = styles[level]
   return (
-    <Badge variant="outline" className={cn('border text-xs capitalize', styles[level])}>
+    <Badge className={cn('border-0 capitalize', style.bg, style.text)}>
       {level}
     </Badge>
   )
@@ -77,7 +84,7 @@ function EditableCell({
           onChange(draft)
           setEditing(false)
         }}
-        className="h-7 text-sm"
+        className="h-8 text-sm border-border/50 bg-secondary/30"
       />
     )
   }
@@ -85,10 +92,10 @@ function EditableCell({
   return (
     <span
       onClick={() => { setDraft(value); setEditing(true) }}
-      className="cursor-pointer rounded px-1 py-0.5 hover:bg-blue-50"
+      className="cursor-pointer rounded-md px-2 py-1 transition-colors hover:bg-primary/5"
       title="Click to edit"
     >
-      {value || <span className="text-slate-400 italic">empty</span>}
+      {value || <span className="text-muted-foreground italic">empty</span>}
     </span>
   )
 }
@@ -104,14 +111,14 @@ function SourceQuote({ quote }: { quote: string }) {
     <div>
       <button
         onClick={() => setOpen(!open)}
-        className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700"
+        className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
       >
         {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
         <Quote className="size-3" />
         Verbatim
       </button>
       {open && (
-        <blockquote className="mt-1.5 border-l-2 border-slate-300 pl-3 text-xs italic text-slate-600">
+        <blockquote className="mt-2 border-l-2 border-primary/30 pl-3 text-xs italic text-muted-foreground">
           {quote}
         </blockquote>
       )}
@@ -168,16 +175,26 @@ export function ReviewView({ meetingId, aiOutput: initialOutput }: ReviewViewPro
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Page title */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-semibold text-slate-900">Review Analysis</h2>
+      <div className="flex items-start justify-between">
+        <div>
+          <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-chart-3/10 px-3 py-1.5 text-sm font-medium text-chart-3 ring-1 ring-chart-3/20">
+            <Sparkles className="size-4" />
+            AI Analysis Complete
+          </div>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">Review Analysis</h1>
+          <p className="mt-2 text-lg text-muted-foreground">
+            Review and edit the extracted insights before approving.
+          </p>
+        </div>
         {approved ? (
           <div className="flex items-center gap-3">
             {exportLinks.md && (
               <Button
                 variant="outline"
                 size="sm"
+                className="gap-2 rounded-xl border-border/50"
                 render={<a href={exportLinks.md} download />}
               >
                 <Download className="size-4" />
@@ -188,14 +205,15 @@ export function ReviewView({ meetingId, aiOutput: initialOutput }: ReviewViewPro
               <Button
                 variant="outline"
                 size="sm"
+                className="gap-2 rounded-xl border-border/50"
                 render={<a href={exportLinks.json} download />}
               >
                 <Download className="size-4" />
                 JSON
               </Button>
             )}
-            <Badge className="gap-1 bg-emerald-100 text-emerald-700">
-              <CheckCircle2 className="size-3" />
+            <Badge className="gap-1.5 bg-chart-3/10 text-chart-3 border-0 px-4 py-2">
+              <CheckCircle2 className="size-4" />
               Approved
             </Badge>
           </div>
@@ -204,27 +222,29 @@ export function ReviewView({ meetingId, aiOutput: initialOutput }: ReviewViewPro
             size="lg"
             onClick={handleApprove}
             disabled={approving}
-            className="gap-2 bg-blue-600 px-6 text-white hover:bg-blue-700"
+            className="gap-2 rounded-xl bg-chart-3 text-white hover:bg-chart-3/90 glow-success"
           >
             {approving ? (
               <Loader2 className="size-4 animate-spin" />
             ) : (
               <Check className="size-4" />
             )}
-            Approve &amp; Export
+            Approve & Export
           </Button>
         )}
       </div>
 
       {/* Trust flags */}
       {output.trust_flags.length > 0 && (
-        <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
-          <AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-600" />
+        <div className="flex items-start gap-4 rounded-xl border border-chart-4/30 bg-chart-4/5 p-5">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-chart-4/10">
+            <AlertTriangle className="size-5 text-chart-4" />
+          </div>
           <div>
-            <p className="text-sm font-medium text-amber-800">Trust Flags</p>
-            <ul className="mt-1 space-y-0.5">
+            <p className="font-semibold text-chart-4">Trust Flags</p>
+            <ul className="mt-2 space-y-1">
               {output.trust_flags.map((flag, i) => (
-                <li key={i} className="text-sm text-amber-700">{flag}</li>
+                <li key={i} className="text-sm text-chart-4/90">{flag}</li>
               ))}
             </ul>
           </div>
@@ -232,231 +252,281 @@ export function ReviewView({ meetingId, aiOutput: initialOutput }: ReviewViewPro
       )}
 
       {/* Meeting metadata */}
-      <Card>
-        <CardHeader>
+      <Card className="glass border-border/50">
+        <CardHeader className="pb-3">
           <CardTitle className="text-lg">Meeting Details</CardTitle>
         </CardHeader>
         <CardContent>
-          <dl className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm lg:grid-cols-4">
-            <div>
-              <dt className="text-slate-500">Title</dt>
-              <dd className="font-medium text-slate-900">{meta.title}</dd>
+          <div className="grid grid-cols-2 gap-6 lg:grid-cols-4">
+            <div className="flex items-start gap-3">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+                <Target className="size-5 text-primary" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Title</p>
+                <p className="font-semibold text-foreground">{meta.title}</p>
+              </div>
             </div>
-            <div>
-              <dt className="text-slate-500">Date</dt>
-              <dd className="font-medium text-slate-900">{meta.date_mentioned ?? 'Not mentioned'}</dd>
+            <div className="flex items-start gap-3">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-chart-2/10">
+                <Calendar className="size-5 text-chart-2" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Date</p>
+                <p className="font-semibold text-foreground">{meta.date_mentioned ?? 'Not mentioned'}</p>
+              </div>
             </div>
-            <div>
-              <dt className="text-slate-500">Participants</dt>
-              <dd className="font-medium text-slate-900">
-                {meta.participants.length > 0 ? meta.participants.join(', ') : 'Unknown'}
-              </dd>
+            <div className="flex items-start gap-3">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-chart-3/10">
+                <Users className="size-5 text-chart-3" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Participants</p>
+                <p className="font-semibold text-foreground">
+                  {meta.participants.length > 0 ? meta.participants.join(', ') : 'Unknown'}
+                </p>
+              </div>
             </div>
-            <div>
-              <dt className="text-slate-500">Duration Estimate</dt>
-              <dd className="font-medium text-slate-900">{meta.duration_estimate ?? 'N/A'}</dd>
+            <div className="flex items-start gap-3">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-chart-4/10">
+                <Clock className="size-5 text-chart-4" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Duration</p>
+                <p className="font-semibold text-foreground">{meta.duration_estimate ?? 'N/A'}</p>
+              </div>
             </div>
-          </dl>
+          </div>
         </CardContent>
       </Card>
 
       {/* State of direction */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <CardTitle className="text-lg">State of Direction</CardTitle>
-            <Badge variant="secondary" className="gap-1 text-xs">
-              <Sparkles className="size-3" />
-              AI Interpretation
-            </Badge>
+      <Card className="glass border-border/50">
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-3">
+            <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10">
+              <Sparkles className="size-5 text-primary" />
+            </div>
+            <div>
+              <CardTitle className="text-lg">State of Direction</CardTitle>
+              <p className="text-sm text-muted-foreground">AI interpretation of meeting direction</p>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
-          <p className="leading-relaxed text-slate-700">{output.state_of_direction}</p>
+          <p className="text-lg leading-relaxed text-foreground/90">{output.state_of_direction}</p>
         </CardContent>
       </Card>
 
       {/* Decisions */}
       {output.decisions.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">
-              Decisions
-              <span className="ml-2 text-sm font-normal text-slate-500">
-                ({output.decisions.length})
-              </span>
-            </CardTitle>
+        <Card className="glass border-border/50 overflow-hidden">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="flex size-10 items-center justify-center rounded-xl bg-chart-3/10">
+                <CheckCircle2 className="size-5 text-chart-3" />
+              </div>
+              <div>
+                <CardTitle className="text-lg">
+                  Decisions
+                  <Badge variant="secondary" className="ml-2 bg-secondary/50">
+                    {output.decisions.length}
+                  </Badge>
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">Key decisions made during the meeting</p>
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-12">ID</TableHead>
-                  <TableHead>Decision</TableHead>
-                  <TableHead className="w-32">Made By</TableHead>
-                  <TableHead className="w-28">Type</TableHead>
-                  <TableHead className="w-24">Confidence</TableHead>
-                  <TableHead className="w-32">Source</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {output.decisions.map((d, idx) => (
-                  <TableRow key={d.id}>
-                    <TableCell className="font-mono text-xs text-slate-500">{d.id}</TableCell>
-                    <TableCell>
-                      <div className="space-y-1">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-border/50 hover:bg-transparent">
+                    <TableHead className="w-16 text-muted-foreground">ID</TableHead>
+                    <TableHead className="text-muted-foreground">Decision</TableHead>
+                    <TableHead className="w-32 text-muted-foreground">Made By</TableHead>
+                    <TableHead className="w-28 text-muted-foreground">Type</TableHead>
+                    <TableHead className="w-24 text-muted-foreground">Confidence</TableHead>
+                    <TableHead className="w-28 text-muted-foreground">Source</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {output.decisions.map((d, idx) => (
+                    <TableRow key={d.id} className="border-border/50 hover:bg-secondary/30">
+                      <TableCell className="font-mono text-xs text-muted-foreground">{d.id}</TableCell>
+                      <TableCell>
                         <EditableCell
                           value={d.description}
                           onChange={(v) => updateDecision(idx, { description: v })}
                         />
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <EditableCell
-                        value={d.made_by}
-                        onChange={(v) => updateDecision(idx, { made_by: v })}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="secondary" className="text-xs">
-                        {d.decision_type}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <LevelBadge level={d.confidence} />
-                    </TableCell>
-                    <TableCell>
-                      <SourceQuote quote={d.source_quote} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                      </TableCell>
+                      <TableCell>
+                        <EditableCell
+                          value={d.made_by}
+                          onChange={(v) => updateDecision(idx, { made_by: v })}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="secondary" className="bg-secondary/50 text-xs">
+                          {d.decision_type}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <LevelBadge level={d.confidence} />
+                      </TableCell>
+                      <TableCell>
+                        <SourceQuote quote={d.source_quote} />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
       )}
 
       {/* Action Items */}
       {output.action_items.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">
-              Action Items
-              <span className="ml-2 text-sm font-normal text-slate-500">
-                ({output.action_items.length})
-              </span>
-            </CardTitle>
+        <Card className="glass border-border/50 overflow-hidden">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10">
+                <ListChecks className="size-5 text-primary" />
+              </div>
+              <div>
+                <CardTitle className="text-lg">
+                  Action Items
+                  <Badge variant="secondary" className="ml-2 bg-secondary/50">
+                    {output.action_items.length}
+                  </Badge>
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">Tasks with owners and deadlines</p>
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-12">ID</TableHead>
-                  <TableHead>Task</TableHead>
-                  <TableHead className="w-28">Owner</TableHead>
-                  <TableHead className="w-28">Deadline</TableHead>
-                  <TableHead className="w-24">Confidence</TableHead>
-                  <TableHead className="w-16 text-center">Verified</TableHead>
-                  <TableHead className="w-32">Source</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {output.action_items.map((a, idx) => (
-                  <TableRow key={a.id}>
-                    <TableCell className="font-mono text-xs text-slate-500">{a.id}</TableCell>
-                    <TableCell>
-                      <EditableCell
-                        value={a.task}
-                        onChange={(v) => updateAction(idx, { task: v })}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <EditableCell
-                        value={a.owner}
-                        onChange={(v) => updateAction(idx, { owner: v })}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <EditableCell
-                        value={a.deadline ?? ''}
-                        onChange={(v) => updateAction(idx, { deadline: v || null })}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <LevelBadge level={a.confidence} />
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <button
-                        onClick={() => updateAction(idx, { verified: !a.verified })}
-                        className={cn(
-                          'inline-flex size-6 items-center justify-center rounded border transition-colors',
-                          a.verified
-                            ? 'border-emerald-300 bg-emerald-100 text-emerald-600'
-                            : 'border-slate-300 text-slate-300 hover:border-slate-400'
-                        )}
-                      >
-                        <Check className="size-3.5" />
-                      </button>
-                    </TableCell>
-                    <TableCell>
-                      <SourceQuote quote={a.source_quote} />
-                    </TableCell>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-border/50 hover:bg-transparent">
+                    <TableHead className="w-16 text-muted-foreground">ID</TableHead>
+                    <TableHead className="text-muted-foreground">Task</TableHead>
+                    <TableHead className="w-28 text-muted-foreground">Owner</TableHead>
+                    <TableHead className="w-28 text-muted-foreground">Deadline</TableHead>
+                    <TableHead className="w-24 text-muted-foreground">Confidence</TableHead>
+                    <TableHead className="w-16 text-center text-muted-foreground">Done</TableHead>
+                    <TableHead className="w-28 text-muted-foreground">Source</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {output.action_items.map((a, idx) => (
+                    <TableRow key={a.id} className="border-border/50 hover:bg-secondary/30">
+                      <TableCell className="font-mono text-xs text-muted-foreground">{a.id}</TableCell>
+                      <TableCell>
+                        <EditableCell
+                          value={a.task}
+                          onChange={(v) => updateAction(idx, { task: v })}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <EditableCell
+                          value={a.owner}
+                          onChange={(v) => updateAction(idx, { owner: v })}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <EditableCell
+                          value={a.deadline ?? ''}
+                          onChange={(v) => updateAction(idx, { deadline: v || null })}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <LevelBadge level={a.confidence} />
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <button
+                          onClick={() => updateAction(idx, { verified: !a.verified })}
+                          className={cn(
+                            'inline-flex size-7 items-center justify-center rounded-lg border-2 transition-all',
+                            a.verified
+                              ? 'border-chart-3 bg-chart-3 text-white'
+                              : 'border-border hover:border-chart-3 hover:bg-chart-3/10'
+                          )}
+                        >
+                          {a.verified && <Check className="size-4" />}
+                        </button>
+                      </TableCell>
+                      <TableCell>
+                        <SourceQuote quote={a.source_quote} />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
       )}
 
       {/* Risks */}
       {output.open_risks.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">
-              Open Risks
-              <span className="ml-2 text-sm font-normal text-slate-500">
-                ({output.open_risks.length})
-              </span>
-            </CardTitle>
+        <Card className="glass border-border/50 overflow-hidden">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="flex size-10 items-center justify-center rounded-xl bg-chart-5/10">
+                <AlertCircle className="size-5 text-chart-5" />
+              </div>
+              <div>
+                <CardTitle className="text-lg">
+                  Open Risks
+                  <Badge variant="secondary" className="ml-2 bg-secondary/50">
+                    {output.open_risks.length}
+                  </Badge>
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">Potential blockers and concerns</p>
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-12">ID</TableHead>
-                  <TableHead>Risk</TableHead>
-                  <TableHead className="w-28">Raised By</TableHead>
-                  <TableHead className="w-24">Severity</TableHead>
-                  <TableHead className="w-32">Source</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {output.open_risks.map((r, idx) => (
-                  <TableRow key={r.id}>
-                    <TableCell className="font-mono text-xs text-slate-500">{r.id}</TableCell>
-                    <TableCell>
-                      <EditableCell
-                        value={r.description}
-                        onChange={(v) => updateRisk(idx, { description: v })}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <EditableCell
-                        value={r.raised_by}
-                        onChange={(v) => updateRisk(idx, { raised_by: v })}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <LevelBadge level={r.severity} />
-                    </TableCell>
-                    <TableCell>
-                      <SourceQuote quote={r.source_quote} />
-                    </TableCell>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-border/50 hover:bg-transparent">
+                    <TableHead className="w-16 text-muted-foreground">ID</TableHead>
+                    <TableHead className="text-muted-foreground">Risk</TableHead>
+                    <TableHead className="w-28 text-muted-foreground">Raised By</TableHead>
+                    <TableHead className="w-24 text-muted-foreground">Severity</TableHead>
+                    <TableHead className="w-28 text-muted-foreground">Source</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {output.open_risks.map((r, idx) => (
+                    <TableRow key={r.id} className="border-border/50 hover:bg-secondary/30">
+                      <TableCell className="font-mono text-xs text-muted-foreground">{r.id}</TableCell>
+                      <TableCell>
+                        <EditableCell
+                          value={r.description}
+                          onChange={(v) => updateRisk(idx, { description: v })}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <EditableCell
+                          value={r.raised_by}
+                          onChange={(v) => updateRisk(idx, { raised_by: v })}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <LevelBadge level={r.severity} />
+                      </TableCell>
+                      <TableCell>
+                        <SourceQuote quote={r.source_quote} />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
       )}
