@@ -19,6 +19,10 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b-instruct-q4_K_M")
 
 RE_JSON_FENCE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?\s*```", re.DOTALL)
 
+GENERAL_SYSTEM_PROMPT = """You are a helpful assistant that answers questions about meeting history.
+You synthesize information from meeting excerpts and provide clear, accurate answers.
+Always cite which meetings your answer is based on. Return responses as valid JSON."""
+
 SYSTEM_PROMPT = """You are a meeting analyst. You extract decisions, commitments, risks, and coordination dependencies from meeting transcripts.
 
 HOW DECISIONS FORM IN MEETINGS:
@@ -207,7 +211,7 @@ def _format_transcript_for_prompt(utterances: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def _analyze_with_anthropic(user_prompt: str) -> dict:
+def _analyze_with_anthropic(user_prompt: str, system_prompt: str = SYSTEM_PROMPT) -> dict:
     import anthropic
 
     client = _get_anthropic_client()
@@ -217,7 +221,7 @@ def _analyze_with_anthropic(user_prompt: str) -> dict:
         response = client.messages.create(
             model=ANTHROPIC_MODEL,
             max_tokens=8192,
-            system=SYSTEM_PROMPT,
+            system=system_prompt,
             messages=[{"role": "user", "content": user_prompt}],
         )
         text = response.content[0].text
@@ -241,7 +245,7 @@ def _analyze_with_anthropic(user_prompt: str) -> dict:
         response = client.messages.create(
             model=ANTHROPIC_MODEL,
             max_tokens=8192,
-            system=SYSTEM_PROMPT,
+            system=system_prompt,
             messages=[{"role": "user", "content": retry_prompt}],
         )
         text = response.content[0].text
@@ -250,7 +254,7 @@ def _analyze_with_anthropic(user_prompt: str) -> dict:
         raise ValueError(f"Anthropic returned invalid JSON after retry: {e}")
 
 
-def _analyze_with_gemini(user_prompt: str) -> dict:
+def _analyze_with_gemini(user_prompt: str, system_prompt: str = SYSTEM_PROMPT) -> dict:
     import google.generativeai as genai
 
     model = _get_gemini_client()
@@ -284,7 +288,7 @@ def _analyze_with_gemini(user_prompt: str) -> dict:
         raise ValueError(f"Gemini returned invalid JSON after retry: {e}")
 
 
-def _analyze_with_ollama(user_prompt: str) -> dict:
+def _analyze_with_ollama(user_prompt: str, system_prompt: str = SYSTEM_PROMPT) -> dict:
     from openai import OpenAI
 
     client = OpenAI(base_url=f"{OLLAMA_BASE_URL}/v1", api_key="ollama")
@@ -293,7 +297,7 @@ def _analyze_with_ollama(user_prompt: str) -> dict:
         response = client.chat.completions.create(
             model=OLLAMA_MODEL,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.1,
@@ -313,7 +317,7 @@ def _analyze_with_ollama(user_prompt: str) -> dict:
         response = client.chat.completions.create(
             model=OLLAMA_MODEL,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": retry_prompt},
             ],
             temperature=0.0,
@@ -363,10 +367,10 @@ def generate(prompt: str, provider: str = None) -> dict:
         provider = available[0]
 
     if provider == "anthropic":
-        return _analyze_with_anthropic(prompt)
+        return _analyze_with_anthropic(prompt, system_prompt=GENERAL_SYSTEM_PROMPT)
     elif provider == "gemini":
-        return _analyze_with_gemini(prompt)
+        return _analyze_with_gemini(prompt, system_prompt=GENERAL_SYSTEM_PROMPT)
     elif provider == "ollama":
-        return _analyze_with_ollama(prompt)
+        return _analyze_with_ollama(prompt, system_prompt=GENERAL_SYSTEM_PROMPT)
     else:
         raise ValueError(f"Unknown provider: {provider}")
