@@ -1,7 +1,10 @@
 import json
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request
+
+logger = logging.getLogger(__name__)
 
 from config import EXPORTS_DIR
 from database import get_meeting, update_ai_output, update_verified_output, record_export
@@ -125,7 +128,7 @@ async def approve(request: Request):
         memory = get_memory()
         memory.index_meeting(meeting_id, verified_output)
     except Exception:
-        pass  # Don't fail the approve if indexing fails
+        logger.exception("Failed to auto-index meeting %s into memory", meeting_id)
 
     # Extract action items into dedicated table
     try:
@@ -144,7 +147,7 @@ async def approve(request: Request):
             title = verified_output.get("meeting_metadata", {}).get("title", "")
             upsert_speaker_profile(name=name, topics=[title] if title else [], meeting_count=1)
     except Exception:
-        pass
+        logger.exception("Failed to extract action items for meeting %s", meeting_id)
 
     # Generate exports
     safe_title = "".join(c if c.isalnum() or c in "-_ " else "" for c in meeting["title"])[:50].strip()

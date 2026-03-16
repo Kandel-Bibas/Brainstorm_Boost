@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from database import get_open_action_items, get_speaker_profiles
 from meeting_memory import MeetingMemory
@@ -130,6 +133,7 @@ Return ONLY valid JSON, no markdown fencing."""
     try:
         result = generate(prompt, provider=provider)
     except Exception:
+        logger.warning("LLM generation failed for read-ahead brief, using fallback", exc_info=True)
         # Fallback: build a structured response from what we have without LLM
         result = {
             "summary": f"Upcoming meeting on: {agenda}",

@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import json
-import secrets
+import logging
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 
 from live_session import LiveSession
+
 from idea_board import IdeaBoard
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["live"])
 
@@ -73,7 +76,7 @@ async def end_session(request: Request):
         try:
             await ws.send_json({"type": "session_ended", "meeting_id": meeting_id})
         except Exception:
-            pass
+            logger.warning("Failed to notify client %s of session end", token, exc_info=True)
 
     _active_session = None
     _active_board = None
@@ -168,9 +171,9 @@ async def websocket_session(websocket: WebSocket, code: str = "", role: str = "p
                 await _send_moderator_updates(websocket)
 
     except WebSocketDisconnect:
-        pass
+        logger.debug("WebSocket client %s disconnected", client_token)
     except Exception:
-        pass
+        logger.exception("WebSocket error for client %s", client_token)
     finally:
         _connected_clients.pop(client_token, None)
 
@@ -201,7 +204,7 @@ async def _send_moderator_updates(ws: WebSocket):
             for alert in alerts:
                 await ws.send_json({"type": "alert", **alert})
     except Exception:
-        pass
+        logger.warning("Failed to send moderator updates", exc_info=True)
 
     # Context surfacing from past meetings
     try:
@@ -213,4 +216,4 @@ async def _send_moderator_updates(ws: WebSocket):
             if context:
                 await ws.send_json({"type": "context", "items": context})
     except Exception:
-        pass
+        logger.warning("Failed to surface context from past meetings", exc_info=True)

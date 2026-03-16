@@ -42,7 +42,5 @@ Open http://localhost:8000
 
 ## What It Doesn't Do (Yet)
 
-- Real-time transcription
 - Multi-user collaboration
 - Calendar/email integration
-- Audio/video file processing

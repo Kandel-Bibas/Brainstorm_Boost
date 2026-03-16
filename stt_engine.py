@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 _whisper_model = None
 _diarization_pipeline = None
@@ -118,6 +121,7 @@ def transcribe_file(file_path: Path, model_size: str = "medium") -> list[dict]:
                 "speaker": speaker,
             })
     except (ValueError, Exception):
+        logger.warning("Speaker diarization failed, assigning all to Unknown", exc_info=True)
         # If diarization fails (no HF_TOKEN, etc.), assign all to Unknown
         speaker_segments = [{
             "start": 0.0,
