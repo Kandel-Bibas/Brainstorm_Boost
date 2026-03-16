@@ -1,18 +1,10 @@
 import { useState, useCallback, useRef } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { Upload, FileText, AudioLines, Loader2, X, Sparkles, Zap, ArrowRight } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, type AiOutput } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 
 const TRANSCRIPT_EXTENSIONS = ['.vtt', '.txt', '.md', '.srt']
@@ -36,28 +28,18 @@ function detectFileKind(file: File): FileKind {
 
 interface UploadViewProps {
   onAnalysisComplete: (meetingId: string, aiOutput: AiOutput) => void
+  provider?: string
 }
 
 type UploadStatus = 'idle' | 'uploading' | 'analyzing' | 'done'
 
-export function UploadView({ onAnalysisComplete }: UploadViewProps) {
+export function UploadView({ onAnalysisComplete, provider }: UploadViewProps) {
   const [file, setFile] = useState<File | null>(null)
   const [fileKind, setFileKind] = useState<FileKind>('transcript')
   const [pastedText, setPastedText] = useState('')
-  const [provider, setProvider] = useState<string | undefined>(undefined)
   const [status, setStatus] = useState<UploadStatus>('idle')
   const [isDragOver, setIsDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
-
-  const { data: providersData } = useQuery({
-    queryKey: ['providers'],
-    queryFn: api.getProviders,
-  })
-
-  const providers = providersData?.providers ?? []
-  const defaultProvider = providersData?.default ?? undefined
-
-  const effectiveProvider = provider ?? defaultProvider
 
   const handleFileDrop = useCallback((files: FileList | null) => {
     if (!files?.length) return
@@ -103,7 +85,7 @@ export function UploadView({ onAnalysisComplete }: UploadViewProps) {
       }
 
       setStatus('analyzing')
-      const analysisResult = await api.analyze(meetingId, effectiveProvider)
+      const analysisResult = await api.analyze(meetingId, provider)
 
       setStatus('done')
       toast.success('Analysis complete')
@@ -117,7 +99,7 @@ export function UploadView({ onAnalysisComplete }: UploadViewProps) {
   const statusLabel: Record<UploadStatus, string> = {
     idle: '',
     uploading: 'Uploading file...',
-    analyzing: `Analyzing with ${effectiveProvider ?? 'AI'}...`,
+    analyzing: `Analyzing with ${provider ?? 'AI'}...`,
     done: 'Complete',
   }
 
@@ -255,26 +237,8 @@ export function UploadView({ onAnalysisComplete }: UploadViewProps) {
         </CardContent>
       </Card>
 
-      {/* Provider + Submit */}
-      <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-between">
-        {providers.length > 0 && (
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-muted-foreground">AI Provider</span>
-            <Select value={effectiveProvider} onValueChange={(v) => setProvider(v ?? undefined)}>
-              <SelectTrigger className="w-48 border-border/50 bg-secondary/50">
-                <SelectValue placeholder="Select provider" />
-              </SelectTrigger>
-              <SelectContent className="bg-card border-border">
-                {providers.map((p) => (
-                  <SelectItem key={p} value={p}>
-                    {p}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
-
+      {/* Submit */}
+      <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-end">
         <Button
           size="lg"
           onClick={handleSubmit}

@@ -1,5 +1,14 @@
-import { Home, History, Radio, MessageCircle, Sparkles } from 'lucide-react'
+import { Home, History, Radio, MessageCircle, Sparkles, Cpu } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 export type View = 'dashboard' | 'meeting-detail' | 'live' | 'history'
@@ -9,6 +18,8 @@ interface HeaderProps {
   onViewChange: (view: View) => void
   onChatToggle: () => void
   chatOpen: boolean
+  provider?: string
+  onProviderChange: (provider: string) => void
 }
 
 const tabs: { view: View; label: string; icon: typeof Home }[] = [
@@ -17,7 +28,15 @@ const tabs: { view: View; label: string; icon: typeof Home }[] = [
   { view: 'history', label: 'History', icon: History },
 ]
 
-export function Header({ currentView, onViewChange, onChatToggle, chatOpen }: HeaderProps) {
+export function Header({ currentView, onViewChange, onChatToggle, chatOpen, provider, onProviderChange }: HeaderProps) {
+  const { data: providersData } = useQuery({
+    queryKey: ['providers'],
+    queryFn: api.getProviders,
+  })
+
+  const providers = providersData?.providers ?? []
+  const defaultProvider = providersData?.default ?? undefined
+
   return (
     <header className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
@@ -64,6 +83,23 @@ export function Header({ currentView, onViewChange, onChatToggle, chatOpen }: He
               )
             })}
           </nav>
+
+          {/* Provider selector */}
+          {providers.length > 0 && (
+            <div className="flex items-center gap-1.5 rounded-xl bg-secondary/50 px-3 py-1.5 ring-1 ring-border/50">
+              <Cpu className="size-3.5 text-muted-foreground" />
+              <Select value={provider ?? defaultProvider} onValueChange={(v) => v && onProviderChange(v)}>
+                <SelectTrigger className="h-7 w-auto min-w-[100px] border-0 bg-transparent p-0 text-sm font-medium text-foreground shadow-none focus:ring-0">
+                  <SelectValue placeholder="AI Model" />
+                </SelectTrigger>
+                <SelectContent className="bg-card border-border">
+                  {providers.map((p) => (
+                    <SelectItem key={p} value={p}>{p}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {/* Chat button */}
           <Button

@@ -14,6 +14,7 @@ interface DashboardProps {
   prepAgendaPreFill?: string
   prepParticipantsPreFill?: string
   onClearPreFill: () => void
+  provider?: string
 }
 
 export function Dashboard({
@@ -23,6 +24,7 @@ export function Dashboard({
   prepAgendaPreFill,
   prepParticipantsPreFill,
   onClearPreFill,
+  provider,
 }: DashboardProps) {
   const { data: meetings, isLoading } = useQuery({
     queryKey: ['meetings'],
@@ -131,6 +133,7 @@ export function Dashboard({
         <PrepView
           initialAgenda={prepAgendaPreFill}
           initialParticipants={prepParticipantsPreFill}
+          provider={provider}
         />
       </div>
     </div>

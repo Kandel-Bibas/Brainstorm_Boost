@@ -29,6 +29,7 @@ export default function App() {
   const [prepAgendaPreFill, setPrepAgendaPreFill] = useState('')
   const [prepParticipantsPreFill, setPrepParticipantsPreFill] = useState('')
   const [isJoinPage, setIsJoinPage] = useState(false)
+  const [provider, setProvider] = useState<string | undefined>(undefined)
 
   useEffect(() => {
     if (window.location.pathname.startsWith('/join')) {
@@ -81,6 +82,8 @@ export default function App() {
             onViewChange={setView}
             onChatToggle={() => setChatOpen(!chatOpen)}
             chatOpen={chatOpen}
+            provider={provider}
+            onProviderChange={setProvider}
           />
           <main className="mx-auto max-w-7xl px-6 py-10">
             <div className="fade-in">
@@ -95,6 +98,7 @@ export default function App() {
                     setPrepAgendaPreFill('')
                     setPrepParticipantsPreFill('')
                   }}
+                  provider={provider}
                 />
               )}
               {view === 'meeting-detail' && currentMeetingId && (
@@ -108,6 +112,7 @@ export default function App() {
                   onPrepareFollowUp={(agenda, participants) =>
                     navigateToDashboard(agenda, participants)
                   }
+                  provider={provider}
                 />
               )}
               {view === 'live' && (
@@ -130,6 +135,7 @@ export default function App() {
             setChatOpen(false)
             navigateToMeeting(id)
           }}
+          provider={provider}
         />
 
         {/* Upload Modal */}
@@ -140,6 +146,7 @@ export default function App() {
             setUploadModalOpen(false)
             navigateToMeeting(meetingId)
           }}
+          provider={provider}
         />
       </div>
       <Toaster

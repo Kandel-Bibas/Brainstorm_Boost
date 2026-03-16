@@ -10,6 +10,7 @@ interface MeetingDetailProps {
   onBack: () => void
   onOpenChat: (meetingId: string) => void
   onPrepareFollowUp: (agenda: string, participants: string) => void
+  provider?: string
 }
 
 export function MeetingDetail({ meetingId, onBack, onOpenChat, onPrepareFollowUp }: MeetingDetailProps) {

@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { BookOpen, Users, CheckCircle, AlertCircle, Loader2, Sparkles, ArrowRight, Calendar } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
@@ -9,13 +8,6 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 
 interface ReadAheadResult {
@@ -40,22 +32,15 @@ interface ReadAheadResult {
 interface PrepViewProps {
   initialAgenda?: string
   initialParticipants?: string
+  provider?: string
 }
 
-export function PrepView({ initialAgenda, initialParticipants }: PrepViewProps = {}) {
+export function PrepView({ initialAgenda, initialParticipants, provider }: PrepViewProps = {}) {
   const [agenda, setAgenda] = useState(initialAgenda ?? '')
   const [participantsRaw, setParticipantsRaw] = useState(initialParticipants ?? '')
-  const [provider, setProvider] = useState<string | undefined>(undefined)
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<ReadAheadResult | null>(null)
   const [completedItems, setCompletedItems] = useState<Set<string>>(new Set())
-
-  const { data: providersData } = useQuery({
-    queryKey: ['providers'],
-    queryFn: api.getProviders,
-  })
-
-  const providers = providersData?.providers ?? []
 
   const handleGenerate = async () => {
     const trimmedAgenda = agenda.trim()
@@ -136,21 +121,6 @@ export function PrepView({ initialAgenda, initialParticipants }: PrepViewProps =
           </div>
 
           <div className="flex items-center gap-4 pt-2">
-            {providers.length > 0 && (
-              <Select value={provider} onValueChange={(v) => setProvider(v ?? undefined)}>
-                <SelectTrigger className="w-44 border-border/50 bg-secondary/50">
-                  <SelectValue placeholder="AI Provider" />
-                </SelectTrigger>
-                <SelectContent className="bg-card border-border">
-                  {providers.map((p) => (
-                    <SelectItem key={p} value={p}>
-                      {p}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-
             <Button
               onClick={handleGenerate}
               disabled={!agenda.trim() || loading}

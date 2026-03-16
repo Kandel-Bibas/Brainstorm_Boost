@@ -18,9 +18,10 @@ interface ChatPanelProps {
   onClose: () => void
   contextMeetingId: string | null
   onNavigateToMeeting: (meetingId: string) => void
+  provider?: string
 }
 
-export function ChatPanel({ isOpen, onClose, contextMeetingId, onNavigateToMeeting }: ChatPanelProps) {
+export function ChatPanel({ isOpen, onClose, contextMeetingId, onNavigateToMeeting, provider }: ChatPanelProps) {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
@@ -53,7 +54,8 @@ export function ChatPanel({ isOpen, onClose, contextMeetingId, onNavigateToMeeti
       const result = await api.sendChatMessage(
         text,
         sessionId ?? undefined,
-        contextMeetingId ?? undefined
+        contextMeetingId ?? undefined,
+        provider
       )
       setSessionId(result.session_id)
       setMessages((prev) => [

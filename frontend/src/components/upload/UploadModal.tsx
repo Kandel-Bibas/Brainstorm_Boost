@@ -10,9 +10,10 @@ interface UploadModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onAnalysisComplete: (meetingId: string) => void
+  provider?: string
 }
 
-export function UploadModal({ open, onOpenChange, onAnalysisComplete }: UploadModalProps) {
+export function UploadModal({ open, onOpenChange, onAnalysisComplete, provider }: UploadModalProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -21,6 +22,7 @@ export function UploadModal({ open, onOpenChange, onAnalysisComplete }: UploadMo
           Upload a transcript or audio file for AI analysis
         </DialogDescription>
         <UploadView
+          provider={provider}
           onAnalysisComplete={(meetingId) => {
             onAnalysisComplete(meetingId)
           }}
