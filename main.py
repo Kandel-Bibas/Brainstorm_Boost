@@ -37,3 +37,12 @@ def serve_index():
         return HTMLResponse(content=react_index.read_text())
     legacy_index = Path(__file__).parent / "static" / "index.html"
     return HTMLResponse(content=legacy_index.read_text())
+
+
+# SPA catch-all: serve index.html for any non-API path
+@app.get("/{path:path}")
+def serve_spa(path: str):
+    react_index = Path(__file__).parent / "frontend" / "dist" / "index.html"
+    if react_index.exists():
+        return HTMLResponse(content=react_index.read_text())
+    return HTMLResponse(content="<h1>Not Found</h1>", status_code=404)
