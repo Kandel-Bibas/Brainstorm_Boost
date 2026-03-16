@@ -24,7 +24,16 @@ def startup():
     init_db()
 
 
+# Serve React frontend build
+react_dist = Path(__file__).parent / "frontend" / "dist"
+if react_dist.exists():
+    app.mount("/assets", StaticFiles(directory=str(react_dist / "assets")), name="react-assets")
+
+
 @app.get("/", response_class=HTMLResponse)
 def serve_index():
-    index_path = Path(__file__).parent / "static" / "index.html"
-    return HTMLResponse(content=index_path.read_text())
+    react_index = Path(__file__).parent / "frontend" / "dist" / "index.html"
+    if react_index.exists():
+        return HTMLResponse(content=react_index.read_text())
+    legacy_index = Path(__file__).parent / "static" / "index.html"
+    return HTMLResponse(content=legacy_index.read_text())
