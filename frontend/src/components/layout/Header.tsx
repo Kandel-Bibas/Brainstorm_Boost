@@ -1,4 +1,5 @@
 import { Home, History, Radio, MessageCircle, Sparkles, Cpu } from 'lucide-react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import {
@@ -11,24 +12,24 @@ import {
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
-export type View = 'dashboard' | 'meeting-detail' | 'live' | 'history'
-
 interface HeaderProps {
-  currentView: View
-  onViewChange: (view: View) => void
   onChatToggle: () => void
   chatOpen: boolean
   provider?: string
   onProviderChange: (provider: string) => void
 }
 
-const tabs: { view: View; label: string; icon: typeof Home }[] = [
-  { view: 'dashboard', label: 'Home', icon: Home },
-  { view: 'live', label: 'Live', icon: Radio },
-  { view: 'history', label: 'History', icon: History },
+const tabs: { path: string; label: string; icon: typeof Home }[] = [
+  { path: '/', label: 'Home', icon: Home },
+  { path: '/live', label: 'Live', icon: Radio },
+  { path: '/history', label: 'History', icon: History },
 ]
 
-export function Header({ currentView, onViewChange, onChatToggle, chatOpen, provider, onProviderChange }: HeaderProps) {
+export function Header({ onChatToggle, chatOpen, provider, onProviderChange }: HeaderProps) {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const currentPath = location.pathname
+
   const { data: providersData } = useQuery({
     queryKey: ['providers'],
     queryFn: api.getProviders,
@@ -42,7 +43,7 @@ export function Header({ currentView, onViewChange, onChatToggle, chatOpen, prov
       <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
         {/* Logo */}
         <button
-          onClick={() => onViewChange('dashboard')}
+          onClick={() => navigate('/')}
           className="flex items-center gap-3 transition-opacity hover:opacity-80"
         >
           <div className="flex size-9 items-center justify-center rounded-xl bg-primary/10 ring-1 ring-primary/20">
@@ -57,16 +58,16 @@ export function Header({ currentView, onViewChange, onChatToggle, chatOpen, prov
         {/* Navigation */}
         <div className="flex items-center gap-3">
           <nav className="flex items-center gap-1 rounded-2xl bg-secondary/50 p-1.5 ring-1 ring-border/50">
-            {tabs.map(({ view, label, icon: Icon }) => {
-              const isActive = currentView === view
-              const isLive = view === 'live'
+            {tabs.map(({ path, label, icon: Icon }) => {
+              const isActive = path === '/' ? currentPath === '/' : currentPath.startsWith(path)
+              const isLive = path === '/live'
 
               return (
                 <Button
-                  key={view}
+                  key={path}
                   variant="ghost"
                   size="sm"
-                  onClick={() => onViewChange(view)}
+                  onClick={() => navigate(path)}
                   className={cn(
                     'relative gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all duration-200',
                     'text-muted-foreground hover:text-foreground hover:bg-secondary',
