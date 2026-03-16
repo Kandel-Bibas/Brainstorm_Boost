@@ -3,16 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import chromadb
-from sentence_transformers import SentenceTransformer
 
-_embedding_model = None
-
-
-def _get_embedding_model() -> SentenceTransformer:
-    global _embedding_model
-    if _embedding_model is None:
-        _embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
-    return _embedding_model
+from embeddings import get_embedding_model
 
 
 class MeetingMemory:
@@ -29,7 +21,7 @@ class MeetingMemory:
 
     def index_meeting(self, meeting_id: str, ai_output: dict) -> None:
         """Index a meeting's AI output into ChromaDB for semantic search."""
-        model = _get_embedding_model()
+        model = get_embedding_model()
         documents = []
         metadatas = []
         ids = []
@@ -37,7 +29,8 @@ class MeetingMemory:
         title = ai_output.get("meeting_metadata", {}).get("title", "Untitled")
 
         # Index decisions
-        for d in ai_output.get("decisions", []):
+        for i, d in enumerate(ai_output.get("decisions", [])):
+            item_id = d.get("id") or f"D{i+1}"
             doc = f"Decision: {d['description']}"
             if d.get("source_quote"):
                 doc += f' (Source: "{d["source_quote"]}")'
@@ -46,12 +39,13 @@ class MeetingMemory:
                 "meeting_id": meeting_id,
                 "meeting_title": title,
                 "item_type": "decision",
-                "item_id": d.get("id", ""),
+                "item_id": item_id,
             })
-            ids.append(f"{meeting_id}_{d.get('id', 'D')}")
+            ids.append(f"{meeting_id}_{item_id}")
 
         # Index action items
-        for a in ai_output.get("action_items", []):
+        for i, a in enumerate(ai_output.get("action_items", [])):
+            item_id = a.get("id") or f"A{i+1}"
             doc = f"Action item: {a['task']}"
             if a.get("owner"):
                 doc += f" (Owner: {a['owner']})"
@@ -64,12 +58,13 @@ class MeetingMemory:
                 "meeting_id": meeting_id,
                 "meeting_title": title,
                 "item_type": "action_item",
-                "item_id": a.get("id", ""),
+                "item_id": item_id,
             })
-            ids.append(f"{meeting_id}_{a.get('id', 'A')}")
+            ids.append(f"{meeting_id}_{item_id}")
 
         # Index risks
-        for r in ai_output.get("open_risks", []):
+        for i, r in enumerate(ai_output.get("open_risks", [])):
+            item_id = r.get("id") or f"R{i+1}"
             doc = f"Risk: {r['description']}"
             if r.get("source_quote"):
                 doc += f' (Source: "{r["source_quote"]}")'
@@ -78,9 +73,9 @@ class MeetingMemory:
                 "meeting_id": meeting_id,
                 "meeting_title": title,
                 "item_type": "risk",
-                "item_id": r.get("id", ""),
+                "item_id": item_id,
             })
-            ids.append(f"{meeting_id}_{r.get('id', 'R')}")
+            ids.append(f"{meeting_id}_{item_id}")
 
         # Index state of direction
         sod = ai_output.get("state_of_direction")
@@ -110,7 +105,7 @@ class MeetingMemory:
         if self._collection.count() == 0:
             return []
 
-        model = _get_embedding_model()
+        model = get_embedding_model()
         query_embedding = model.encode([question]).tolist()
 
         results = self._collection.query(

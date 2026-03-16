@@ -5,17 +5,9 @@ import string
 import time
 from uuid import uuid4
 
-from sentence_transformers import SentenceTransformer
 import numpy as np
 
-_embedding_model = None
-
-
-def _get_embedding_model() -> SentenceTransformer:
-    global _embedding_model
-    if _embedding_model is None:
-        _embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
-    return _embedding_model
+from embeddings import get_embedding_model
 
 
 def _generate_join_code(length: int = 6) -> str:
@@ -40,7 +32,7 @@ class LiveSession:
         self._last_spoke: dict[str, float] = {}
 
         # Pre-compute agenda embedding for drift detection
-        model = _get_embedding_model()
+        model = get_embedding_model()
         self.agenda_embedding = model.encode(agenda)
 
     def add_utterance(self, speaker: str, text: str):
@@ -115,7 +107,7 @@ class LiveSession:
         if not recent_text.strip():
             return {"similarity": 1.0, "drifted": False}
 
-        model = _get_embedding_model()
+        model = get_embedding_model()
         recent_embedding = model.encode(recent_text)
 
         similarity = float(np.dot(self.agenda_embedding, recent_embedding) / (
