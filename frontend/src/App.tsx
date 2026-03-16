@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'sonner'
 import { Header, type View } from '@/components/layout/Header'
@@ -7,6 +7,8 @@ import { ReviewView } from '@/components/review/ReviewView'
 import { QueryView } from '@/components/query/QueryView'
 import { MeetingsView } from '@/components/meetings/MeetingsView'
 import { PrepView } from '@/components/prep/PrepView'
+import { LiveView } from '@/components/live/LiveView'
+import { JoinView } from '@/components/live/JoinView'
 import type { AiOutput } from '@/lib/api'
 
 const queryClient = new QueryClient({
@@ -22,6 +24,13 @@ export default function App() {
   const [view, setView] = useState<View>('upload')
   const [currentMeetingId, setCurrentMeetingId] = useState<string | null>(null)
   const [currentAiOutput, setCurrentAiOutput] = useState<AiOutput | null>(null)
+  const [isJoinPage, setIsJoinPage] = useState(false)
+
+  useEffect(() => {
+    if (window.location.pathname.startsWith('/join')) {
+      setIsJoinPage(true)
+    }
+  }, [])
 
   const handleAnalysisComplete = useCallback((meetingId: string, aiOutput: AiOutput) => {
     setCurrentMeetingId(meetingId)
@@ -37,6 +46,15 @@ export default function App() {
 
   const hasReview = currentMeetingId !== null && currentAiOutput !== null
 
+  if (isJoinPage) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <JoinView />
+        <Toaster position="bottom-right" richColors />
+      </QueryClientProvider>
+    )
+  }
+
   return (
     <QueryClientProvider client={queryClient}>
       <div className="min-h-screen bg-slate-50">
@@ -50,6 +68,7 @@ export default function App() {
           )}
           {view === 'prepare' && <PrepView />}
           {view === 'query' && <QueryView />}
+          {view === 'live' && <LiveView />}
           {view === 'meetings' && (
             <MeetingsView onSelectMeeting={handleSelectMeeting} />
           )}

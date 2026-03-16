@@ -1,8 +1,8 @@
-import { Upload, ClipboardCheck, Search, History, BookOpen } from 'lucide-react'
+import { Upload, ClipboardCheck, Search, History, BookOpen, Radio } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
-export type View = 'upload' | 'review' | 'prepare' | 'query' | 'meetings'
+export type View = 'upload' | 'review' | 'prepare' | 'query' | 'meetings' | 'live'
 
 interface HeaderProps {
   currentView: View
@@ -15,6 +15,7 @@ const tabs: { view: View; label: string; icon: typeof Upload }[] = [
   { view: 'prepare', label: 'Prepare', icon: BookOpen },
   { view: 'review', label: 'Review', icon: ClipboardCheck },
   { view: 'query', label: 'Ask', icon: Search },
+  { view: 'live', label: 'Live', icon: Radio },
   { view: 'meetings', label: 'History', icon: History },
 ]
 

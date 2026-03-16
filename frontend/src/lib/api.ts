@@ -142,4 +142,29 @@ export const api = {
     if (!res.ok) throw new Error((await res.json()).detail);
     return res.json();
   },
+
+  async startLiveSession(agenda: string, participants: string[]) {
+    const res = await fetch(`${BASE}/api/live/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agenda, participants }),
+    });
+    if (!res.ok) throw new Error((await res.json()).detail);
+    return res.json();
+  },
+
+  async endLiveSession() {
+    const res = await fetch(`${BASE}/api/live/end`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    if (!res.ok) throw new Error((await res.json()).detail);
+    return res.json();
+  },
+
+  async getLiveStatus() {
+    const res = await fetch(`${BASE}/api/live/status`);
+    return res.json();
+  },
 };
