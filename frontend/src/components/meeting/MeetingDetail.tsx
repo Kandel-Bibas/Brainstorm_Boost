@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ChevronRight, Home, Loader2, MessageCircle, BookOpen, Download, AlertCircle, Database, DatabaseZap } from 'lucide-react'
+import { ChevronRight, Home, Loader2, MessageCircle, BookOpen, Download, AlertCircle, Database, DatabaseZap, GitMerge } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, type AiOutput } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -23,6 +23,8 @@ export function MeetingDetail({ meetingId, onBack, onOpenChat, onPrepareFollowUp
   const [exportLinks, setExportLinks] = useState<{ md?: string; json?: string }>({})
   const [indexed, setIndexed] = useState<boolean | null>(null)
   const [indexing, setIndexing] = useState(false)
+  const [graphData, setGraphData] = useState<any>(null)
+  const [reindexing, setReindexing] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -47,6 +49,13 @@ export function MeetingDetail({ meetingId, onBack, onOpenChat, onPrepareFollowUp
         } catch {
           // ChromaDB might not be available yet
         }
+        // Fetch graph data
+        try {
+          const graph = await api.getMeetingGraph(meetingId)
+          if (!cancelled) setGraphData(graph)
+        } catch {
+          // Graph may not exist for old meetings — that's fine
+        }
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Failed to load meeting')
@@ -62,6 +71,20 @@ export function MeetingDetail({ meetingId, onBack, onOpenChat, onPrepareFollowUp
   const handleApprove = (exports: { md?: string; json?: string }) => {
     setApproved(true)
     setExportLinks(exports)
+  }
+
+  const handleReindex = async () => {
+    setReindexing(true)
+    try {
+      await api.reindexMeeting(meetingId)
+      const graph = await api.getMeetingGraph(meetingId)
+      setGraphData(graph)
+      toast.success('Knowledge graph built successfully')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to reindex meeting')
+    } finally {
+      setReindexing(false)
+    }
   }
 
   const handleToggleMemory = async () => {
@@ -126,28 +149,46 @@ export function MeetingDetail({ meetingId, onBack, onOpenChat, onPrepareFollowUp
           <span className="text-foreground">{meetingTitle}</span>
         </nav>
 
-        {aiOutput && indexed !== null && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleToggleMemory}
-            disabled={indexing}
-            className={`gap-2 rounded-xl border-border/50 text-xs ${
-              indexed
-                ? 'bg-primary/10 text-primary hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30'
-                : 'hover:bg-primary/10 hover:text-primary hover:border-primary/30'
-            }`}
-          >
-            {indexing ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : indexed ? (
-              <DatabaseZap className="size-3.5" />
-            ) : (
-              <Database className="size-3.5" />
-            )}
-            {indexed ? 'In Knowledge Base' : 'Add to Knowledge Base'}
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {aiOutput && graphData && graphData.nodes?.length === 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleReindex}
+              disabled={reindexing}
+              className="gap-2 rounded-xl border-border/50 text-xs hover:bg-chart-2/10 hover:text-chart-2 hover:border-chart-2/30"
+            >
+              {reindexing ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <GitMerge className="size-3.5" />
+              )}
+              Reindex with Knowledge Graph
+            </Button>
+          )}
+          {aiOutput && indexed !== null && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleToggleMemory}
+              disabled={indexing}
+              className={`gap-2 rounded-xl border-border/50 text-xs ${
+                indexed
+                  ? 'bg-primary/10 text-primary hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30'
+                  : 'hover:bg-primary/10 hover:text-primary hover:border-primary/30'
+              }`}
+            >
+              {indexing ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : indexed ? (
+                <DatabaseZap className="size-3.5" />
+              ) : (
+                <Database className="size-3.5" />
+              )}
+              {indexed ? 'In Knowledge Base' : 'Add to Knowledge Base'}
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* No AI output state */}
@@ -177,6 +218,7 @@ export function MeetingDetail({ meetingId, onBack, onOpenChat, onPrepareFollowUp
             meetingId={meetingId}
             aiOutput={aiOutput}
             onApprove={handleApprove}
+            graphData={graphData}
           />
 
           {/* Post-approval actions */}

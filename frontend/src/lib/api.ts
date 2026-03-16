@@ -186,6 +186,21 @@ export const api = {
     return res.json();
   },
 
+  async getMeetingGraph(meetingId: string) {
+    const res = await fetch(`${BASE}/api/meetings/${meetingId}/graph`);
+    if (!res.ok) throw new Error((await res.json()).detail);
+    return res.json() as Promise<{
+      nodes: Array<{ id: string; node_type: string; content: string; meeting_id: string; properties: Record<string, any> }>;
+      edges: Array<{ id: string; source_node_id: string; target_node_id: string; edge_type: string; meeting_id: string }>;
+    }>;
+  },
+
+  async reindexMeeting(meetingId: string) {
+    const res = await fetch(`${BASE}/api/meetings/${meetingId}/reindex`, { method: 'POST' });
+    if (!res.ok) throw new Error((await res.json()).detail);
+    return res.json();
+  },
+
   async startLiveSession(agenda: string, participants: string[]) {
     const res = await fetch(`${BASE}/api/live/start`, {
       method: 'POST',

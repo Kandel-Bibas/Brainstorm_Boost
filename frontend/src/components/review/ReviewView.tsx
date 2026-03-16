@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import {
   AlertTriangle,
   ChevronDown,
@@ -23,11 +23,16 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
+import { ConnectionChips } from '@/components/review/ConnectionChips'
 
 interface ReviewViewProps {
   meetingId: string
   aiOutput: AiOutput
   onApprove?: (exports: { md?: string; json?: string }) => void
+  graphData?: {
+    nodes: Array<{ id: string; node_type: string; content: string; properties: Record<string, any> }>
+    edges: Array<{ source_node_id: string; target_node_id: string; edge_type: string }>
+  }
 }
 
 // --- Confidence / Severity badge ---
@@ -119,11 +124,16 @@ function SourceQuote({ quote }: { quote: string }) {
   )
 }
 
-export function ReviewView({ meetingId, aiOutput: initialOutput, onApprove }: ReviewViewProps) {
+export function ReviewView({ meetingId, aiOutput: initialOutput, onApprove, graphData }: ReviewViewProps) {
   const [output, setOutput] = useState<AiOutput>(initialOutput)
   const [approving, setApproving] = useState(false)
   const [approved, setApproved] = useState(false)
   const [exportLinks, setExportLinks] = useState<{ md?: string; json?: string }>({})
+
+  const nodeMap = useMemo(() => {
+    if (!graphData) return new Map<string, { id: string; node_type: string; content: string; properties: Record<string, any> }>()
+    return new Map(graphData.nodes.map(n => [n.id, n]))
+  }, [graphData])
 
   const meta = output.meeting_metadata
 
@@ -334,33 +344,43 @@ export function ReviewView({ meetingId, aiOutput: initialOutput, onApprove }: Re
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {output.decisions.map((d, idx) => (
-                <div key={d.id} className="rounded-xl border border-border/50 bg-secondary/20 p-4 space-y-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-xs text-muted-foreground">{d.id}</span>
-                    <Badge variant="secondary" className="bg-secondary/50 text-xs">
-                      {d.decision_type}
-                    </Badge>
-                    <LevelBadge level={d.confidence} />
-                  </div>
-                  <div>
-                    <EditableCell
-                      value={d.description}
-                      onChange={(v) => updateDecision(idx, { description: v })}
-                    />
-                  </div>
-                  <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-                    <span>
-                      Made by:{' '}
+              {output.decisions.map((d, idx) => {
+                const nodeId = `${meetingId}:decision:${idx + 1}`
+                return (
+                  <div key={d.id} className="rounded-xl border border-border/50 bg-secondary/20 p-4 space-y-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-xs text-muted-foreground">{d.id}</span>
+                      <Badge variant="secondary" className="bg-secondary/50 text-xs">
+                        {d.decision_type}
+                      </Badge>
+                      <LevelBadge level={d.confidence} />
+                    </div>
+                    <div>
                       <EditableCell
-                        value={d.made_by}
-                        onChange={(v) => updateDecision(idx, { made_by: v })}
+                        value={d.description}
+                        onChange={(v) => updateDecision(idx, { description: v })}
                       />
-                    </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+                      <span>
+                        Made by:{' '}
+                        <EditableCell
+                          value={d.made_by}
+                          onChange={(v) => updateDecision(idx, { made_by: v })}
+                        />
+                      </span>
+                    </div>
+                    <SourceQuote quote={d.source_quote} />
+                    {graphData && (
+                      <ConnectionChips
+                        nodeId={nodeId}
+                        edges={graphData.edges}
+                        nodeMap={nodeMap}
+                      />
+                    )}
                   </div>
-                  <SourceQuote quote={d.source_quote} />
-                </div>
-              ))}
+                )
+              })}
             </div>
           </CardContent>
         </Card>
@@ -387,49 +407,59 @@ export function ReviewView({ meetingId, aiOutput: initialOutput, onApprove }: Re
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {output.action_items.map((a, idx) => (
-                <div key={a.id} className="rounded-xl border border-border/50 bg-secondary/20 p-4 space-y-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-xs text-muted-foreground">{a.id}</span>
-                    <LevelBadge level={a.confidence} />
-                    <button
-                      onClick={() => updateAction(idx, { verified: !a.verified })}
-                      className={cn(
-                        'inline-flex items-center gap-1.5 rounded-lg border-2 px-2 py-0.5 text-xs font-medium transition-all',
-                        a.verified
-                          ? 'border-chart-3 bg-chart-3 text-white'
-                          : 'border-border text-muted-foreground hover:border-chart-3 hover:bg-chart-3/10'
-                      )}
-                    >
-                      <Check className="size-3" />
-                      Verified
-                    </button>
-                  </div>
-                  <div>
-                    <EditableCell
-                      value={a.task}
-                      onChange={(v) => updateAction(idx, { task: v })}
-                    />
-                  </div>
-                  <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-                    <span>
-                      Owner:{' '}
+              {output.action_items.map((a, idx) => {
+                const nodeId = `${meetingId}:action_item:${idx + 1}`
+                return (
+                  <div key={a.id} className="rounded-xl border border-border/50 bg-secondary/20 p-4 space-y-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-xs text-muted-foreground">{a.id}</span>
+                      <LevelBadge level={a.confidence} />
+                      <button
+                        onClick={() => updateAction(idx, { verified: !a.verified })}
+                        className={cn(
+                          'inline-flex items-center gap-1.5 rounded-lg border-2 px-2 py-0.5 text-xs font-medium transition-all',
+                          a.verified
+                            ? 'border-chart-3 bg-chart-3 text-white'
+                            : 'border-border text-muted-foreground hover:border-chart-3 hover:bg-chart-3/10'
+                        )}
+                      >
+                        <Check className="size-3" />
+                        Verified
+                      </button>
+                    </div>
+                    <div>
                       <EditableCell
-                        value={a.owner}
-                        onChange={(v) => updateAction(idx, { owner: v })}
+                        value={a.task}
+                        onChange={(v) => updateAction(idx, { task: v })}
                       />
-                    </span>
-                    <span>
-                      Deadline:{' '}
-                      <EditableCell
-                        value={a.deadline ?? ''}
-                        onChange={(v) => updateAction(idx, { deadline: v || null })}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+                      <span>
+                        Owner:{' '}
+                        <EditableCell
+                          value={a.owner}
+                          onChange={(v) => updateAction(idx, { owner: v })}
+                        />
+                      </span>
+                      <span>
+                        Deadline:{' '}
+                        <EditableCell
+                          value={a.deadline ?? ''}
+                          onChange={(v) => updateAction(idx, { deadline: v || null })}
+                        />
+                      </span>
+                    </div>
+                    <SourceQuote quote={a.source_quote} />
+                    {graphData && (
+                      <ConnectionChips
+                        nodeId={nodeId}
+                        edges={graphData.edges}
+                        nodeMap={nodeMap}
                       />
-                    </span>
+                    )}
                   </div>
-                  <SourceQuote quote={a.source_quote} />
-                </div>
-              ))}
+                )
+              })}
             </div>
           </CardContent>
         </Card>
@@ -456,30 +486,40 @@ export function ReviewView({ meetingId, aiOutput: initialOutput, onApprove }: Re
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {output.open_risks.map((r, idx) => (
-                <div key={r.id} className="rounded-xl border border-border/50 bg-secondary/20 p-4 space-y-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-xs text-muted-foreground">{r.id}</span>
-                    <LevelBadge level={r.severity} />
-                  </div>
-                  <div>
-                    <EditableCell
-                      value={r.description}
-                      onChange={(v) => updateRisk(idx, { description: v })}
-                    />
-                  </div>
-                  <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-                    <span>
-                      Raised by:{' '}
+              {output.open_risks.map((r, idx) => {
+                const nodeId = `${meetingId}:risk:${idx + 1}`
+                return (
+                  <div key={r.id} className="rounded-xl border border-border/50 bg-secondary/20 p-4 space-y-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-xs text-muted-foreground">{r.id}</span>
+                      <LevelBadge level={r.severity} />
+                    </div>
+                    <div>
                       <EditableCell
-                        value={r.raised_by}
-                        onChange={(v) => updateRisk(idx, { raised_by: v })}
+                        value={r.description}
+                        onChange={(v) => updateRisk(idx, { description: v })}
                       />
-                    </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+                      <span>
+                        Raised by:{' '}
+                        <EditableCell
+                          value={r.raised_by}
+                          onChange={(v) => updateRisk(idx, { raised_by: v })}
+                        />
+                      </span>
+                    </div>
+                    <SourceQuote quote={r.source_quote} />
+                    {graphData && (
+                      <ConnectionChips
+                        nodeId={nodeId}
+                        edges={graphData.edges}
+                        nodeMap={nodeMap}
+                      />
+                    )}
                   </div>
-                  <SourceQuote quote={r.source_quote} />
-                </div>
-              ))}
+                )
+              })}
             </div>
           </CardContent>
         </Card>
