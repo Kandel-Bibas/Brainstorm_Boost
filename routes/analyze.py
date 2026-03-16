@@ -119,6 +119,14 @@ async def approve(request: Request):
 
     update_verified_output(meeting_id, verified_output)
 
+    # Auto-index into meeting memory for RAG queries
+    try:
+        from routes.query import get_memory
+        memory = get_memory()
+        memory.index_meeting(meeting_id, verified_output)
+    except Exception:
+        pass  # Don't fail the approve if indexing fails
+
     # Generate exports
     safe_title = "".join(c if c.isalnum() or c in "-_ " else "" for c in meeting["title"])[:50].strip()
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")

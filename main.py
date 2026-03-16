@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from config import EXPORTS_DIR
 from database import init_db
-from routes import upload, analyze, meetings
+from routes import upload, analyze, meetings, query
 
 app = FastAPI(title="Brainstorm Boost", version="0.2.0")
 
@@ -16,6 +16,7 @@ app.mount("/exports", StaticFiles(directory=str(EXPORTS_DIR)), name="exports")
 app.include_router(upload.router)
 app.include_router(analyze.router)
 app.include_router(meetings.router)
+app.include_router(query.router)
 
 
 @app.on_event("startup")
