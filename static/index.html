@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brainstorm Boost</title>
+    <style>
+        :root {
+            --navy: #0a1628;
+            --navy-light: #1a2a4a;
+            --blue: #2563eb;
+            --blue-light: #3b82f6;
+            --blue-pale: #dbeafe;
+            --green: #16a34a;
+            --green-pale: #dcfce7;
+            --yellow: #ca8a04;
+            --yellow-pale: #fef9c3;
+            --red: #dc2626;
+            --red-pale: #fee2e2;
+            --gray-50: #f8fafc;
+            --gray-100: #f1f5f9;
+            --gray-200: #e2e8f0;
+            --gray-300: #cbd5e1;
+            --gray-500: #64748b;
+            --gray-700: #334155;
+            --gray-900: #0f172a;
+            --radius: 8px;
+            --shadow: 0 1px 3px rgba(0,0,0,0.1);
+            --shadow-md: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--gray-50);
+            color: var(--gray-900);
+            line-height: 1.6;
+        }
+
+        header {
+            background: var(--navy);
+            color: white;
+            padding: 1rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: var(--shadow-md);
+        }
+
+        header h1 { font-size: 1.4rem; font-weight: 700; }
+        header h1 span { color: var(--blue-light); }
+
+        nav { display: flex; gap: 0.5rem; }
+        nav button {
+            background: transparent;
+            color: var(--gray-300);
+            border: 1px solid var(--gray-500);
+            padding: 0.4rem 1rem;
+            border-radius: var(--radius);
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.15s;
+        }
+        nav button:hover, nav button.active {
+            background: var(--blue);
+            color: white;
+            border-color: var(--blue);
+        }
+
+        .container { max-width: 1100px; margin: 2rem auto; padding: 0 1.5rem; }
+
+        .view { display: none; }
+        .view.active { display: block; }
+
+        /* Upload View */
+        .upload-zone {
+            border: 2px dashed var(--gray-300);
+            border-radius: var(--radius);
+            padding: 3rem 2rem;
+            text-align: center;
+            background: white;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 1.5rem;
+        }
+        .upload-zone:hover, .upload-zone.dragover {
+            border-color: var(--blue);
+            background: var(--blue-pale);
+        }
+        .upload-zone p { color: var(--gray-500); margin-top: 0.5rem; }
+        .upload-zone .icon { font-size: 2.5rem; }
+
+        .or-divider {
+            text-align: center;
+            color: var(--gray-500);
+            margin: 1rem 0;
+            font-size: 0.85rem;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 200px;
+            padding: 1rem;
+            border: 1px solid var(--gray-200);
+            border-radius: var(--radius);
+            font-family: inherit;
+            font-size: 0.9rem;
+            resize: vertical;
+            background: white;
+        }
+        textarea:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.7rem 1.5rem;
+            border: none;
+            border-radius: var(--radius);
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .btn-primary { background: var(--blue); color: white; }
+        .btn-primary:hover { background: var(--blue-light); }
+        .btn-primary:disabled { background: var(--gray-300); cursor: not-allowed; }
+        .btn-success { background: var(--green); color: white; }
+        .btn-success:hover { opacity: 0.9; }
+        .btn-outline {
+            background: white;
+            color: var(--blue);
+            border: 1px solid var(--blue);
+        }
+        .btn-outline:hover { background: var(--blue-pale); }
+
+        .actions-bar {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1.5rem;
+            align-items: center;
+        }
+
+        /* Loading spinner */
+        .spinner {
+            display: none;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 2rem;
+            text-align: center;
+            justify-content: center;
+        }
+        .spinner.active { display: flex; }
+        .spinner .dot {
+            width: 10px; height: 10px;
+            background: var(--blue);
+            border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out;
+        }
+        .spinner .dot:nth-child(2) { animation-delay: 0.16s; }
+        .spinner .dot:nth-child(3) { animation-delay: 0.32s; }
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+        .spinner-text { color: var(--gray-500); font-size: 0.9rem; }
+
+        /* Review View */
+        .card {
+            background: white;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .card h2 {
+            font-size: 1.15rem;
+            margin-bottom: 1rem;
+            color: var(--navy);
+            border-bottom: 2px solid var(--blue-pale);
+            padding-bottom: 0.5rem;
+        }
+
+        .trust-banner {
+            background: var(--yellow-pale);
+            border: 1px solid var(--yellow);
+            border-radius: var(--radius);
+            padding: 0.75rem 1rem;
+            margin-bottom: 1.5rem;
+            font-size: 0.85rem;
+        }
+        .trust-banner strong { color: var(--yellow); }
+
+        .badge {
+            display: inline-block;
+            padding: 0.15rem 0.5rem;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .badge-high { background: var(--green-pale); color: var(--green); }
+        .badge-medium { background: var(--yellow-pale); color: var(--yellow); }
+        .badge-low { background: var(--red-pale); color: var(--red); }
+
+        .status-badge {
+            display: inline-block;
+            padding: 0.2rem 0.6rem;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .status-uploaded { background: var(--gray-200); color: var(--gray-700); }
+        .status-analyzed { background: var(--yellow-pale); color: var(--yellow); }
+        .status-approved { background: var(--green-pale); color: var(--green); }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+        th {
+            text-align: left;
+            padding: 0.6rem 0.75rem;
+            background: var(--gray-100);
+            font-weight: 600;
+            color: var(--gray-700);
+            border-bottom: 2px solid var(--gray-200);
+        }
+        td {
+            padding: 0.6rem 0.75rem;
+            border-bottom: 1px solid var(--gray-100);
+            vertical-align: top;
+        }
+        tr:hover td { background: var(--gray-50); }
+
+        .editable {
+            cursor: pointer;
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            border: 1px solid transparent;
+            transition: all 0.15s;
+            min-width: 60px;
+            display: inline-block;
+        }
+        .editable:hover { border-color: var(--blue); background: var(--blue-pale); }
+
+        .edit-input {
+            padding: 0.3rem 0.5rem;
+            border: 1px solid var(--blue);
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-family: inherit;
+            width: 100%;
+            background: white;
+        }
+        .edit-input:focus { outline: none; box-shadow: 0 0 0 2px rgba(37,99,235,0.2); }
+
+        details {
+            margin-top: 0.25rem;
+        }
+        summary {
+            font-size: 0.8rem;
+            color: var(--gray-500);
+            cursor: pointer;
+        }
+        details .quote {
+            font-style: italic;
+            font-size: 0.8rem;
+            color: var(--gray-500);
+            background: var(--gray-100);
+            padding: 0.4rem 0.6rem;
+            border-radius: 4px;
+            margin-top: 0.3rem;
+        }
+
+        .meta-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+        .meta-item label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            color: var(--gray-500);
+            font-weight: 600;
+        }
+        .meta-item p { font-size: 0.95rem; margin-top: 0.2rem; }
+
+        .direction-text {
+            font-size: 0.95rem;
+            line-height: 1.7;
+            color: var(--gray-700);
+        }
+
+        /* Past Meetings */
+        .meetings-table a {
+            color: var(--blue);
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .meetings-table a:hover { text-decoration: underline; }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: var(--gray-500);
+        }
+
+        /* Export links */
+        .export-links {
+            display: flex; gap: 1rem; margin-top: 1rem;
+        }
+        .export-links a {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.5rem 1rem;
+            background: var(--gray-100);
+            border-radius: var(--radius);
+            color: var(--blue);
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 0.9rem;
+        }
+        .export-links a:hover { background: var(--blue-pale); }
+
+        /* Toast notification */
+        .toast {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            padding: 0.75rem 1.25rem;
+            border-radius: var(--radius);
+            color: white;
+            font-size: 0.9rem;
+            box-shadow: var(--shadow-md);
+            transform: translateY(100px);
+            opacity: 0;
+            transition: all 0.3s;
+            z-index: 1000;
+        }
+        .toast.show { transform: translateY(0); opacity: 1; }
+        .toast-success { background: var(--green); }
+        .toast-error { background: var(--red); }
+
+        .verified-check {
+            width: 18px; height: 18px;
+            accent-color: var(--green);
+        }
+
+        .provider-select {
+            padding: 0.5rem 0.75rem;
+            border: 1px solid var(--gray-200);
+            border-radius: var(--radius);
+            font-size: 0.9rem;
+            font-family: inherit;
+            background: white;
+            color: var(--gray-900);
+            cursor: pointer;
+        }
+        .provider-select:focus { outline: none; border-color: var(--blue); }
+        .provider-label {
+            font-size: 0.8rem;
+            color: var(--gray-500);
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Brainstorm <span>Boost</span></h1>
+        <nav>
+            <button class="active" onclick="showView('upload')">Upload</button>
+            <button onclick="showView('review')">Review</button>
+            <button onclick="showView('meetings')">Past Meetings</button>
+        </nav>
+    </header>
+
+    <div class="container">
+        <!-- Upload View -->
+        <div id="view-upload" class="view active">
+            <h2 style="margin-bottom:1rem;">Upload Meeting Transcript</h2>
+
+            <div class="upload-zone" id="dropZone">
+                <div class="icon">&#128196;</div>
+                <p><strong>Drop a .vtt or .txt file here</strong></p>
+                <p>or click to browse</p>
+                <input type="file" id="fileInput" accept=".vtt,.txt,.md,.srt" hidden>
+            </div>
+
+            <div class="or-divider">- OR paste transcript text below -</div>
+
+            <textarea id="transcriptText" placeholder="Paste your meeting transcript here..."></textarea>
+
+            <div class="actions-bar">
+                <button class="btn btn-primary" id="btnAnalyze" onclick="handleUploadAndAnalyze()">
+                    Upload &amp; Analyze
+                </button>
+                <div style="display:flex;align-items:center;gap:0.5rem;">
+                    <span class="provider-label">AI Provider:</span>
+                    <select id="providerSelect" class="provider-select">
+                        <option value="">Loading...</option>
+                    </select>
+                </div>
+                <span id="fileLabel" style="color:var(--gray-500);font-size:0.85rem;"></span>
+            </div>
+
+            <div class="spinner" id="uploadSpinner">
+                <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+                <span class="spinner-text" id="spinnerText">Analyzing transcript...</span>
+            </div>
+        </div>
+
+        <!-- Review View -->
+        <div id="view-review" class="view">
+            <div id="trustBanner" class="trust-banner" style="display:none;"></div>
+
+            <!-- Metadata -->
+            <div class="card">
+                <h2>Meeting Overview</h2>
+                <div class="meta-grid" id="metaGrid"></div>
+            </div>
+
+            <!-- State of Direction -->
+            <div class="card" id="directionCard" style="display:none;">
+                <h2>State of Direction</h2>
+                <p class="direction-text" id="directionText"></p>
+            </div>
+
+            <!-- Decisions -->
+            <div class="card">
+                <h2>Decisions</h2>
+                <table>
+                    <thead>
+                        <tr><th>ID</th><th>Decision</th><th>Made By</th><th>Confidence</th><th>Source</th></tr>
+                    </thead>
+                    <tbody id="decisionsBody"></tbody>
+                </table>
+            </div>
+
+            <!-- Action Items -->
+            <div class="card">
+                <h2>Action Items</h2>
+                <table>
+                    <thead>
+                        <tr><th>ID</th><th>Task</th><th>Owner</th><th>Deadline</th><th>Confidence</th><th>Verified</th><th>Source</th></tr>
+                    </thead>
+                    <tbody id="actionsBody"></tbody>
+                </table>
+            </div>
+
+            <!-- Open Risks -->
+            <div class="card">
+                <h2>Open Risks</h2>
+                <table>
+                    <thead>
+                        <tr><th>ID</th><th>Risk</th><th>Raised By</th><th>Severity</th><th>Source</th></tr>
+                    </thead>
+                    <tbody id="risksBody"></tbody>
+                </table>
+            </div>
+
+            <div class="actions-bar">
+                <button class="btn btn-success" id="btnApprove" onclick="handleApprove()">Approve &amp; Export</button>
+                <button class="btn btn-outline" onclick="showView('upload')">Back to Upload</button>
+            </div>
+
+            <div id="exportResult" style="display:none;" class="card">
+                <h2>Export Complete</h2>
+                <div class="export-links" id="exportLinks"></div>
+            </div>
+        </div>
+
+        <!-- Past Meetings View -->
+        <div id="view-meetings" class="view">
+            <h2 style="margin-bottom:1rem;">Past Meetings</h2>
+            <div class="card">
+                <table class="meetings-table">
+                    <thead>
+                        <tr><th>Title</th><th>Date</th><th>Status</th><th>Actions</th></tr>
+                    </thead>
+                    <tbody id="meetingsBody"></tbody>
+                </table>
+                <div class="empty-state" id="emptyMeetings" style="display:none;">
+                    No meetings yet. Upload a transcript to get started.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+    // --- State ---
+    let currentMeetingId = null;
+    let aiOutput = null;
+    let editedOutput = null;
+    let selectedFile = null;
+
+    const PROVIDER_LABELS = { anthropic: 'Claude (Anthropic)', gemini: 'Gemini (Google)' };
+
+    // --- Load providers on startup ---
+    (async function loadProviders() {
+        try {
+            const res = await fetch('/api/providers');
+            const data = await res.json();
+            const sel = document.getElementById('providerSelect');
+            if (data.providers.length === 0) {
+                sel.innerHTML = '<option value="">No API keys configured</option>';
+                return;
+            }
+            sel.innerHTML = data.providers.map(p =>
+                `<option value="${p}" ${p === data.default ? 'selected' : ''}>${PROVIDER_LABELS[p] || p}</option>`
+            ).join('');
+        } catch {
+            document.getElementById('providerSelect').innerHTML = '<option value="">Error loading</option>';
+        }
+    })();
+
+    // --- Navigation ---
+    function showView(name) {
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        document.getElementById('view-' + name).classList.add('active');
+        document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('nav button').forEach(b => {
+            if (b.textContent.toLowerCase().includes(name === 'meetings' ? 'past' : name)) b.classList.add('active');
+        });
+        if (name === 'meetings') loadMeetings();
+    }
+
+    // --- Toast ---
+    function showToast(msg, type = 'success') {
+        const t = document.getElementById('toast');
+        t.textContent = msg;
+        t.className = 'toast toast-' + type + ' show';
+        setTimeout(() => t.classList.remove('show'), 3500);
+    }
+
+    // --- Drag & Drop ---
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', e => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        if (e.dataTransfer.files.length) {
+            selectedFile = e.dataTransfer.files[0];
+            document.getElementById('fileLabel').textContent = 'Selected: ' + selectedFile.name;
+        }
+    });
+    fileInput.addEventListener('change', () => {
+        if (fileInput.files.length) {
+            selectedFile = fileInput.files[0];
+            document.getElementById('fileLabel').textContent = 'Selected: ' + selectedFile.name;
+        }
+    });
+
+    // --- Upload & Analyze ---
+    async function handleUploadAndAnalyze() {
+        const textVal = document.getElementById('transcriptText').value.trim();
+        if (!selectedFile && !textVal) {
+            showToast('Please upload a file or paste transcript text', 'error');
+            return;
+        }
+
+        const btn = document.getElementById('btnAnalyze');
+        const spinner = document.getElementById('uploadSpinner');
+        btn.disabled = true;
+        spinner.classList.add('active');
+
+        try {
+            // Step 1: Upload
+            const formData = new FormData();
+            if (selectedFile) {
+                formData.append('file', selectedFile);
+            } else {
+                formData.append('text', textVal);
+            }
+
+            const uploadRes = await fetch('/api/upload-transcript', { method: 'POST', body: formData });
+            if (!uploadRes.ok) {
+                const err = await uploadRes.json();
+                throw new Error(err.detail || 'Upload failed');
+            }
+            const uploadData = await uploadRes.json();
+            currentMeetingId = uploadData.meeting_id;
+
+            // Step 2: Analyze
+            const provider = document.getElementById('providerSelect').value;
+            const providerName = PROVIDER_LABELS[provider] || provider;
+            document.getElementById('spinnerText').textContent = `Analyzing transcript with ${providerName}...`;
+            const analyzeRes = await fetch('/api/analyze', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ meeting_id: currentMeetingId, provider: provider || undefined }),
+            });
+            if (!analyzeRes.ok) {
+                const err = await analyzeRes.json();
+                throw new Error(err.detail || 'Analysis failed');
+            }
+            const analyzeData = await analyzeRes.json();
+            aiOutput = analyzeData.ai_output;
+            editedOutput = JSON.parse(JSON.stringify(aiOutput));
+
+            renderReview();
+            showView('review');
+            showToast('Analysis complete!');
+
+        } catch (err) {
+            showToast(err.message, 'error');
+        } finally {
+            btn.disabled = false;
+            spinner.classList.remove('active');
+        }
+    }
+
+    // --- Render Review ---
+    function renderReview() {
+        if (!editedOutput) return;
+        const meta = editedOutput.meeting_metadata || {};
+
+        // Trust banner
+        const flags = editedOutput.trust_flags || [];
+        const banner = document.getElementById('trustBanner');
+        if (flags.length) {
+            banner.style.display = 'block';
+            banner.innerHTML = '<strong>Trust Flags:</strong> ' + flags.join(' | ');
+        } else {
+            banner.style.display = 'none';
+        }
+
+        // Metadata
+        document.getElementById('metaGrid').innerHTML = `
+            <div class="meta-item"><label>Title</label><p>${esc(meta.title || 'Untitled')}</p></div>
+            <div class="meta-item"><label>Date</label><p>${esc(meta.date_mentioned || 'Not specified')}</p></div>
+            <div class="meta-item"><label>Participants</label><p>${esc((meta.participants || []).join(', ') || 'None detected')}</p></div>
+            <div class="meta-item"><label>Duration</label><p>${esc(meta.duration_estimate || 'Unknown')}</p></div>
+        `;
+
+        // Direction
+        const dirCard = document.getElementById('directionCard');
+        if (editedOutput.state_of_direction) {
+            dirCard.style.display = 'block';
+            document.getElementById('directionText').textContent = editedOutput.state_of_direction;
+        } else {
+            dirCard.style.display = 'none';
+        }
+
+        // Decisions
+        const dBody = document.getElementById('decisionsBody');
+        dBody.innerHTML = (editedOutput.decisions || []).map((d, i) => `
+            <tr>
+                <td>${esc(d.id)}</td>
+                <td><span class="editable" onclick="editField('decisions', ${i}, 'description', this)">${esc(d.description)}</span></td>
+                <td><span class="editable" onclick="editField('decisions', ${i}, 'made_by', this)">${esc(d.made_by || 'N/A')}</span></td>
+                <td><span class="badge badge-${d.confidence}">${d.confidence}</span></td>
+                <td>${sourceQuote(d.source_quote)}</td>
+            </tr>
+        `).join('');
+
+        // Action Items
+        const aBody = document.getElementById('actionsBody');
+        aBody.innerHTML = (editedOutput.action_items || []).map((a, i) => `
+            <tr>
+                <td>${esc(a.id)}</td>
+                <td><span class="editable" onclick="editField('action_items', ${i}, 'task', this)">${esc(a.task)}</span></td>
+                <td><span class="editable" onclick="editField('action_items', ${i}, 'owner', this)">${esc(a.owner || 'Unassigned')}</span></td>
+                <td><span class="editable" onclick="editField('action_items', ${i}, 'deadline', this)">${esc(a.deadline || 'Not specified')}</span></td>
+                <td><span class="badge badge-${a.confidence}">${a.confidence}</span></td>
+                <td><input type="checkbox" class="verified-check" data-section="action_items" data-index="${i}" ${a.verified ? 'checked' : ''}></td>
+                <td>${sourceQuote(a.source_quote)}</td>
+            </tr>
+        `).join('');
+
+        // Risks
+        const rBody = document.getElementById('risksBody');
+        rBody.innerHTML = (editedOutput.open_risks || []).map((r, i) => `
+            <tr>
+                <td>${esc(r.id)}</td>
+                <td><span class="editable" onclick="editField('open_risks', ${i}, 'description', this)">${esc(r.description)}</span></td>
+                <td><span class="editable" onclick="editField('open_risks', ${i}, 'raised_by', this)">${esc(r.raised_by || 'N/A')}</span></td>
+                <td><span class="badge badge-${r.severity}">${r.severity}</span></td>
+                <td>${sourceQuote(r.source_quote)}</td>
+            </tr>
+        `).join('');
+
+        // Verified checkboxes
+        document.querySelectorAll('.verified-check').forEach(cb => {
+            cb.addEventListener('change', e => {
+                const s = e.target.dataset.section;
+                const idx = parseInt(e.target.dataset.index);
+                editedOutput[s][idx].verified = e.target.checked;
+            });
+        });
+
+        // Reset export
+        document.getElementById('exportResult').style.display = 'none';
+    }
+
+    // --- Inline editing ---
+    function editField(section, index, field, el) {
+        const current = editedOutput[section][index][field] || '';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'edit-input';
+        input.value = current;
+
+        const commit = () => {
+            const newVal = input.value.trim() || current;
+            editedOutput[section][index][field] = newVal;
+            el.textContent = newVal;
+            el.style.display = '';
+        };
+
+        input.addEventListener('blur', commit);
+        input.addEventListener('keydown', e => {
+            if (e.key === 'Enter') { e.preventDefault(); commit(); }
+            if (e.key === 'Escape') { el.style.display = ''; input.remove(); }
+        });
+
+        el.style.display = 'none';
+        el.parentNode.insertBefore(input, el.nextSibling);
+        input.focus();
+        input.select();
+    }
+
+    // --- Approve ---
+    async function handleApprove() {
+        if (!currentMeetingId || !editedOutput) return;
+
+        const btn = document.getElementById('btnApprove');
+        btn.disabled = true;
+        btn.textContent = 'Exporting...';
+
+        try {
+            const res = await fetch('/api/approve', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ meeting_id: currentMeetingId, verified_output: editedOutput }),
+            });
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.detail || 'Approve failed');
+            }
+            const data = await res.json();
+
+            const exportDiv = document.getElementById('exportResult');
+            exportDiv.style.display = 'block';
+            document.getElementById('exportLinks').innerHTML = `
+                <a href="${data.exports.markdown}" download>Download Markdown</a>
+                <a href="${data.exports.json}" download>Download JSON</a>
+            `;
+
+            showToast('Approved and exported!');
+        } catch (err) {
+            showToast(err.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Approve & Export';
+        }
+    }
+
+    // --- Past Meetings ---
+    async function loadMeetings() {
+        try {
+            const res = await fetch('/api/meetings');
+            const data = await res.json();
+            const body = document.getElementById('meetingsBody');
+            const empty = document.getElementById('emptyMeetings');
+
+            if (data.length === 0) {
+                body.innerHTML = '';
+                empty.style.display = 'block';
+                return;
+            }
+            empty.style.display = 'none';
+
+            body.innerHTML = data.map(m => `
+                <tr>
+                    <td>${esc(m.title)}</td>
+                    <td>${new Date(m.created_at).toLocaleDateString()}</td>
+                    <td><span class="status-badge status-${m.status}">${m.status}</span></td>
+                    <td><a href="#" onclick="loadMeeting('${m.id}'); return false;">View</a></td>
+                </tr>
+            `).join('');
+        } catch (err) {
+            showToast('Failed to load meetings', 'error');
+        }
+    }
+
+    async function loadMeeting(id) {
+        try {
+            const res = await fetch('/api/meetings/' + id);
+            if (!res.ok) throw new Error('Not found');
+            const data = await res.json();
+            currentMeetingId = data.id;
+            aiOutput = data.ai_output_json || data.verified_output_json;
+            if (!aiOutput) {
+                showToast('This meeting has not been analyzed yet', 'error');
+                return;
+            }
+            editedOutput = JSON.parse(JSON.stringify(data.verified_output_json || data.ai_output_json));
+            renderReview();
+            showView('review');
+        } catch (err) {
+            showToast(err.message, 'error');
+        }
+    }
+
+    // --- Helpers ---
+    function esc(str) {
+        if (!str) return '';
+        const d = document.createElement('div');
+        d.textContent = str;
+        return d.innerHTML;
+    }
+
+    function sourceQuote(q) {
+        if (!q) return '<span style="color:var(--gray-300)">--</span>';
+        return `<details><summary>Show source</summary><div class="quote">"${esc(q)}"</div></details>`;
+    }
+    </script>
+</body>
+</html>
