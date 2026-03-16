@@ -199,5 +199,5 @@ class TestRecommendParticipants:
         results = recommend_participants("design review", empty_memory)
         charlie = next((r for r in results if r["name"] == "Charlie"), None)
         if charlie:
-            assert "past_contributions" in charlie
-            assert charlie["past_contributions"] == 5
+            assert "past_contribution_count" in charlie
+            assert charlie["past_contribution_count"] == 5

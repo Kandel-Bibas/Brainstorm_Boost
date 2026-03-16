@@ -20,6 +20,7 @@ export interface ParticipationStat {
   speaker: string
   word_count: number
   percentage: number
+  seconds_since_last_spoke: number | null
 }
 
 export interface ContextItem {

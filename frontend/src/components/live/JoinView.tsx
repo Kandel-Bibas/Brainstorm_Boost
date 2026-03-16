@@ -88,7 +88,7 @@ export function JoinView() {
 
   const handleIdeaSubmit = useCallback(
     (text: string) => {
-      wsRef.current?.send(JSON.stringify({ type: 'idea', text }))
+      wsRef.current?.send(JSON.stringify({ type: 'submit_idea', text }))
     },
     []
   )

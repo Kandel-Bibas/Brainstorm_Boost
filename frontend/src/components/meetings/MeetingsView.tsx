@@ -58,7 +58,7 @@ export function MeetingsView({ onSelectMeeting }: MeetingsViewProps) {
     }
     try {
       const detail = await api.getMeeting(id)
-      onSelectMeeting(id, detail.ai_output)
+      onSelectMeeting(id, detail.verified_output_json ?? detail.ai_output_json)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load meeting')
     }

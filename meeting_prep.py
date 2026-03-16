@@ -66,7 +66,7 @@ def recommend_participants(agenda: str, memory: MeetingMemory) -> list[dict]:
         # Include profiles that have relevant topics or expertise
         if topic_match or expertise_match or profile.get("meeting_count", 0) > 0:
             profile_copy = dict(profile)
-            profile_copy["past_contributions"] = profile.get("meeting_count", 0)
+            profile_copy["past_contribution_count"] = profile.get("meeting_count", 0)
             scored.append((profile.get("meeting_count", 0), profile_copy))
 
     # Sort by past_contributions descending
@@ -138,8 +138,8 @@ Return ONLY valid JSON, no markdown fencing."""
         result = {
             "summary": f"Upcoming meeting on: {agenda}",
             "related_decisions": [item["content"] for item in related_context if item.get("item_type") == "decision"],
-            "open_items": [item["task"] for item in open_items],
-            "recommended_participants": [p["name"] for p in recommended[:5]],
+            "open_action_items": open_items,
+            "recommended_participants": recommended[:5],
             "assumptions": [],
         }
         return result
@@ -148,13 +148,17 @@ Return ONLY valid JSON, no markdown fencing."""
     defaults = {
         "summary": "",
         "related_decisions": [],
-        "open_items": [],
+        "open_action_items": [],
         "recommended_participants": [],
         "assumptions": [],
     }
     if isinstance(result, dict):
         for key, default in defaults.items():
             result.setdefault(key, default)
+        # Override LLM-generated strings with real DB objects and full dicts
+        result["open_action_items"] = open_items
+        result.pop("open_items", None)
+        result["recommended_participants"] = recommended[:5]
     else:
         result = defaults
 

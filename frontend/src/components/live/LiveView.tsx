@@ -93,8 +93,14 @@ export function LiveView() {
           ])
           break
         case 'participation':
-          if (Array.isArray(msg.stats)) {
-            setParticipation(msg.stats)
+          if (msg.stats && typeof msg.stats === 'object') {
+            const arr = Object.entries(msg.stats).map(([speaker, data]: [string, any]) => ({
+              speaker,
+              word_count: data.word_count,
+              percentage: data.percentage,
+              seconds_since_last_spoke: data.seconds_since_last_spoke,
+            }))
+            setParticipation(arr)
           }
           break
         case 'drift':
@@ -207,7 +213,7 @@ export function LiveView() {
 
   const handleIdeaSubmit = useCallback(
     (text: string) => {
-      wsRef.current?.send(JSON.stringify({ type: 'idea', text }))
+      wsRef.current?.send(JSON.stringify({ type: 'submit_idea', text }))
     },
     []
   )
