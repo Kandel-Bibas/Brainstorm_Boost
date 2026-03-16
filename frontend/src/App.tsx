@@ -50,31 +50,54 @@ export default function App() {
     return (
       <QueryClientProvider client={queryClient}>
         <JoinView />
-        <Toaster position="bottom-right" richColors />
+        <Toaster 
+          position="bottom-right" 
+          richColors 
+          toastOptions={{
+            className: 'bg-card border-border text-foreground',
+          }}
+        />
       </QueryClientProvider>
     )
   }
 
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="min-h-screen bg-slate-50">
-        <Header currentView={view} onViewChange={setView} hasReview={hasReview} />
-        <main className="mx-auto max-w-6xl px-6 py-8">
-          {view === 'upload' && (
-            <UploadView onAnalysisComplete={handleAnalysisComplete} />
-          )}
-          {view === 'review' && currentMeetingId && currentAiOutput && (
-            <ReviewView meetingId={currentMeetingId} aiOutput={currentAiOutput} />
-          )}
-          {view === 'prepare' && <PrepView />}
-          {view === 'query' && <QueryView />}
-          {view === 'live' && <LiveView />}
-          {view === 'meetings' && (
-            <MeetingsView onSelectMeeting={handleSelectMeeting} />
-          )}
-        </main>
+      <div className="relative min-h-screen bg-background">
+        {/* Ambient background glow */}
+        <div className="pointer-events-none fixed inset-0 overflow-hidden">
+          <div className="absolute -top-40 left-1/2 h-[500px] w-[800px] -translate-x-1/2 rounded-full bg-primary/20 blur-[120px]" />
+          <div className="absolute -bottom-40 left-1/4 h-[400px] w-[600px] rounded-full bg-chart-2/10 blur-[100px]" />
+        </div>
+
+        {/* Content */}
+        <div className="relative z-10">
+          <Header currentView={view} onViewChange={setView} hasReview={hasReview} />
+          <main className="mx-auto max-w-7xl px-6 py-10">
+            <div className="fade-in">
+              {view === 'upload' && (
+                <UploadView onAnalysisComplete={handleAnalysisComplete} />
+              )}
+              {view === 'review' && currentMeetingId && currentAiOutput && (
+                <ReviewView meetingId={currentMeetingId} aiOutput={currentAiOutput} />
+              )}
+              {view === 'prepare' && <PrepView />}
+              {view === 'query' && <QueryView />}
+              {view === 'live' && <LiveView />}
+              {view === 'meetings' && (
+                <MeetingsView onSelectMeeting={handleSelectMeeting} />
+              )}
+            </div>
+          </main>
+        </div>
       </div>
-      <Toaster position="bottom-right" richColors />
+      <Toaster 
+        position="bottom-right" 
+        richColors 
+        toastOptions={{
+          className: 'bg-card border-border text-foreground',
+        }}
+      />
     </QueryClientProvider>
   )
 }
