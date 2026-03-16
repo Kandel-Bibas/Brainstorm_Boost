@@ -71,6 +71,32 @@ def init_db():
                 created_at TEXT NOT NULL,
                 FOREIGN KEY (session_id) REFERENCES chat_sessions(id)
             );
+            CREATE TABLE IF NOT EXISTS graph_nodes (
+                id TEXT PRIMARY KEY,
+                meeting_id TEXT,
+                node_type TEXT NOT NULL,
+                content TEXT NOT NULL,
+                properties_json TEXT,
+                source_start INTEGER,
+                source_end INTEGER,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_graph_nodes_meeting ON graph_nodes(meeting_id);
+            CREATE INDEX IF NOT EXISTS idx_graph_nodes_type ON graph_nodes(node_type);
+            CREATE INDEX IF NOT EXISTS idx_graph_nodes_meeting_type ON graph_nodes(meeting_id, node_type);
+            CREATE TABLE IF NOT EXISTS graph_edges (
+                id TEXT PRIMARY KEY,
+                source_node_id TEXT NOT NULL,
+                target_node_id TEXT NOT NULL,
+                edge_type TEXT NOT NULL,
+                meeting_id TEXT,
+                weight REAL DEFAULT 1.0,
+                properties_json TEXT,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_graph_edges_source ON graph_edges(source_node_id);
+            CREATE INDEX IF NOT EXISTS idx_graph_edges_target ON graph_edges(target_node_id);
+            CREATE INDEX IF NOT EXISTS idx_graph_edges_meeting ON graph_edges(meeting_id);
         """)
 
 
@@ -315,3 +341,134 @@ def get_chat_messages(session_id: str, limit: int | None = None) -> list[dict]:
         msg["sources"] = json.loads(raw_sources) if raw_sources is not None else None
         result.append(msg)
     return result
+
+
+# ---------------------------------------------------------------------------
+# graph_nodes / graph_edges
+# ---------------------------------------------------------------------------
+
+def create_graph_node(
+    node_id: str,
+    meeting_id: str | None,
+    node_type: str,
+    content: str,
+    properties: dict | None = None,
+    source_start: int | None = None,
+    source_end: int | None = None,
+) -> str:
+    now = datetime.now(timezone.utc).isoformat()
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO graph_nodes "
+            "(id, meeting_id, node_type, content, properties_json, source_start, source_end, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                node_id, meeting_id, node_type, content,
+                json.dumps(properties) if properties else None,
+                source_start, source_end, now,
+            ),
+        )
+    return node_id
+
+
+def get_node(node_id: str) -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM graph_nodes WHERE id = ?", (node_id,)).fetchone()
+    if row is None:
+        return None
+    d = dict(row)
+    d["properties"] = json.loads(d.pop("properties_json")) if d.get("properties_json") else {}
+    return d
+
+
+def create_graph_edge(
+    source_node_id: str,
+    target_node_id: str,
+    edge_type: str,
+    meeting_id: str | None = None,
+    weight: float = 1.0,
+    properties: dict | None = None,
+) -> str:
+    edge_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT INTO graph_edges "
+            "(id, source_node_id, target_node_id, edge_type, meeting_id, weight, properties_json, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                edge_id, source_node_id, target_node_id, edge_type, meeting_id, weight,
+                json.dumps(properties) if properties else None, now,
+            ),
+        )
+    return edge_id
+
+
+def get_meeting_graph(meeting_id: str) -> dict:
+    """Get all nodes and edges for a meeting, including cross-meeting person/topic nodes linked via edges."""
+    with get_connection() as conn:
+        # Get meeting-scoped nodes
+        node_rows = conn.execute(
+            "SELECT * FROM graph_nodes WHERE meeting_id = ?", (meeting_id,)
+        ).fetchall()
+
+        # Get edges for this meeting
+        edge_rows = conn.execute(
+            "SELECT * FROM graph_edges WHERE meeting_id = ?", (meeting_id,)
+        ).fetchall()
+
+        # Get cross-meeting nodes (persons, topics) referenced by these edges
+        edge_node_ids: set[str] = set()
+        for e in edge_rows:
+            edge_node_ids.add(e["source_node_id"])
+            edge_node_ids.add(e["target_node_id"])
+
+        meeting_node_ids = {r["id"] for r in node_rows}
+        missing_ids = edge_node_ids - meeting_node_ids
+        extra_nodes = []
+        for nid in missing_ids:
+            row = conn.execute("SELECT * FROM graph_nodes WHERE id = ?", (nid,)).fetchone()
+            if row:
+                extra_nodes.append(row)
+
+    def parse_node(row):
+        d = dict(row)
+        d["properties"] = json.loads(d.pop("properties_json")) if d.get("properties_json") else {}
+        return d
+
+    def parse_edge(row):
+        d = dict(row)
+        d["properties"] = json.loads(d.pop("properties_json")) if d.get("properties_json") else {}
+        return d
+
+    return {
+        "nodes": [parse_node(r) for r in node_rows] + [parse_node(r) for r in extra_nodes],
+        "edges": [parse_edge(r) for r in edge_rows],
+    }
+
+
+def find_nodes_by_content(query: str, node_type: str | None = None, limit: int = 20) -> list[dict]:
+    """Search graph nodes by content (LIKE match). For MVP — FTS is a future optimization."""
+    with get_connection() as conn:
+        sql = "SELECT * FROM graph_nodes WHERE content LIKE ?"
+        params: list = [f"%{query}%"]
+        if node_type:
+            sql += " AND node_type = ?"
+            params.append(node_type)
+        sql += " LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(sql, params).fetchall()
+
+    result = []
+    for r in rows:
+        d = dict(r)
+        d["properties"] = json.loads(d.pop("properties_json")) if d.get("properties_json") else {}
+        result.append(d)
+    return result
+
+
+def delete_meeting_graph(meeting_id: str):
+    """Delete all graph nodes and edges for a meeting."""
+    with get_connection() as conn:
+        conn.execute("DELETE FROM graph_edges WHERE meeting_id = ?", (meeting_id,))
+        conn.execute("DELETE FROM graph_nodes WHERE meeting_id = ?", (meeting_id,))
