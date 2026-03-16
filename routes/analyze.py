@@ -127,6 +127,25 @@ async def approve(request: Request):
     except Exception:
         pass  # Don't fail the approve if indexing fails
 
+    # Extract action items into dedicated table
+    try:
+        from database import create_action_item, upsert_speaker_profile
+        for a in verified_output.get("action_items", []):
+            create_action_item(
+                meeting_id=meeting_id,
+                task=a.get("task", ""),
+                owner=a.get("owner"),
+                deadline=a.get("deadline"),
+                confidence=a.get("confidence"),
+                source_quote=a.get("source_quote"),
+            )
+        participants = verified_output.get("meeting_metadata", {}).get("participants", [])
+        for name in participants:
+            title = verified_output.get("meeting_metadata", {}).get("title", "")
+            upsert_speaker_profile(name=name, topics=[title] if title else [], meeting_count=1)
+    except Exception:
+        pass
+
     # Generate exports
     safe_title = "".join(c if c.isalnum() or c in "-_ " else "" for c in meeting["title"])[:50].strip()
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
