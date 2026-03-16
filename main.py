@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from config import EXPORTS_DIR
 from database import init_db
-from routes import upload, analyze, meetings, query, prep, live, chat
+from routes import upload, analyze, meetings, query, prep, live, chat, graph
 
 
 @asynccontextmanager
@@ -28,6 +28,7 @@ app.include_router(query.router)
 app.include_router(prep.router)
 app.include_router(live.router)
 app.include_router(chat.router)
+app.include_router(graph.router)
 
 
 # Serve React frontend build — read once at import time

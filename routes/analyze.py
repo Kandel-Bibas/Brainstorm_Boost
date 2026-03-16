@@ -35,24 +35,30 @@ async def analyze(request: Request):
     if not utterances:
         raise HTTPException(status_code=400, detail="No utterances found for this meeting")
 
+    raw_transcript = meeting.get("raw_transcript", "")
+
     try:
-        ai_output = analyze_transcript(utterances, provider=provider)
-    except PermissionError as e:
-        raise HTTPException(status_code=401, detail=str(e))
-    except ConnectionError as e:
-        raise HTTPException(status_code=429, detail=str(e))
-    except RuntimeError as e:
-        raise HTTPException(status_code=502, detail=str(e))
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        from extraction_pipeline import run_extraction_pipeline
+        ai_output = run_extraction_pipeline(meeting_id, raw_transcript, provider=provider)
     except Exception as e:
-        # Catch provider-specific exceptions
-        err_name = type(e).__name__
-        if "AuthenticationError" in err_name:
-            raise HTTPException(status_code=401, detail=f"Invalid API key: {e}")
-        if "RateLimitError" in err_name:
-            raise HTTPException(status_code=429, detail=f"Rate limited. Please wait and retry: {e}")
-        raise HTTPException(status_code=502, detail=f"LLM API error: {e}")
+        logger.warning("Extraction pipeline failed, falling back to single-shot: %s", e)
+        try:
+            ai_output = analyze_transcript(utterances, provider=provider)
+        except PermissionError as e:
+            raise HTTPException(status_code=401, detail=str(e))
+        except ConnectionError as e:
+            raise HTTPException(status_code=429, detail=str(e))
+        except RuntimeError as e:
+            raise HTTPException(status_code=502, detail=str(e))
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        except Exception as e:
+            err_name = type(e).__name__
+            if "AuthenticationError" in err_name:
+                raise HTTPException(status_code=401, detail=f"Invalid API key: {e}")
+            if "RateLimitError" in err_name:
+                raise HTTPException(status_code=429, detail=f"Rate limited: {e}")
+            raise HTTPException(status_code=502, detail=f"LLM API error: {e}")
 
     update_ai_output(meeting_id, ai_output)
 
@@ -126,7 +132,7 @@ async def approve(request: Request):
     try:
         from routes.query import get_memory
         memory = get_memory()
-        memory.index_meeting(meeting_id, verified_output)
+        memory.index_meeting(meeting_id, verified_output, raw_transcript=meeting.get("raw_transcript"))
     except Exception:
         logger.exception("Failed to auto-index meeting %s into memory", meeting_id)
 
