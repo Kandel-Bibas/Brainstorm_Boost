@@ -22,14 +22,6 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { cn } from '@/lib/utils'
 
 interface ReviewViewProps {
@@ -119,7 +111,7 @@ function SourceQuote({ quote }: { quote: string }) {
         Verbatim
       </button>
       {open && (
-        <blockquote className="mt-2 border-l-2 border-primary/30 pl-3 text-xs italic text-muted-foreground">
+        <blockquote className="mt-2 border-l-2 border-primary/30 pl-3 text-xs italic text-muted-foreground break-words whitespace-pre-wrap">
           {quote}
         </blockquote>
       )}
@@ -340,50 +332,35 @@ export function ReviewView({ meetingId, aiOutput: initialOutput, onApprove }: Re
               </div>
             </div>
           </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-border/50 hover:bg-transparent">
-                    <TableHead className="w-16 text-muted-foreground">ID</TableHead>
-                    <TableHead className="text-muted-foreground">Decision</TableHead>
-                    <TableHead className="w-32 text-muted-foreground">Made By</TableHead>
-                    <TableHead className="w-28 text-muted-foreground">Type</TableHead>
-                    <TableHead className="w-24 text-muted-foreground">Confidence</TableHead>
-                    <TableHead className="w-28 text-muted-foreground">Source</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {output.decisions.map((d, idx) => (
-                    <TableRow key={d.id} className="border-border/50 hover:bg-secondary/30">
-                      <TableCell className="font-mono text-xs text-muted-foreground">{d.id}</TableCell>
-                      <TableCell>
-                        <EditableCell
-                          value={d.description}
-                          onChange={(v) => updateDecision(idx, { description: v })}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <EditableCell
-                          value={d.made_by}
-                          onChange={(v) => updateDecision(idx, { made_by: v })}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary" className="bg-secondary/50 text-xs">
-                          {d.decision_type}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <LevelBadge level={d.confidence} />
-                      </TableCell>
-                      <TableCell>
-                        <SourceQuote quote={d.source_quote} />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+          <CardContent>
+            <div className="space-y-3">
+              {output.decisions.map((d, idx) => (
+                <div key={d.id} className="rounded-xl border border-border/50 bg-secondary/20 p-4 space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-xs text-muted-foreground">{d.id}</span>
+                    <Badge variant="secondary" className="bg-secondary/50 text-xs">
+                      {d.decision_type}
+                    </Badge>
+                    <LevelBadge level={d.confidence} />
+                  </div>
+                  <div>
+                    <EditableCell
+                      value={d.description}
+                      onChange={(v) => updateDecision(idx, { description: v })}
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+                    <span>
+                      Made by:{' '}
+                      <EditableCell
+                        value={d.made_by}
+                        onChange={(v) => updateDecision(idx, { made_by: v })}
+                      />
+                    </span>
+                  </div>
+                  <SourceQuote quote={d.source_quote} />
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>
@@ -408,65 +385,51 @@ export function ReviewView({ meetingId, aiOutput: initialOutput, onApprove }: Re
               </div>
             </div>
           </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-border/50 hover:bg-transparent">
-                    <TableHead className="w-16 text-muted-foreground">ID</TableHead>
-                    <TableHead className="text-muted-foreground">Task</TableHead>
-                    <TableHead className="w-28 text-muted-foreground">Owner</TableHead>
-                    <TableHead className="w-28 text-muted-foreground">Deadline</TableHead>
-                    <TableHead className="w-24 text-muted-foreground">Confidence</TableHead>
-                    <TableHead className="w-16 text-center text-muted-foreground">Done</TableHead>
-                    <TableHead className="w-28 text-muted-foreground">Source</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {output.action_items.map((a, idx) => (
-                    <TableRow key={a.id} className="border-border/50 hover:bg-secondary/30">
-                      <TableCell className="font-mono text-xs text-muted-foreground">{a.id}</TableCell>
-                      <TableCell>
-                        <EditableCell
-                          value={a.task}
-                          onChange={(v) => updateAction(idx, { task: v })}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <EditableCell
-                          value={a.owner}
-                          onChange={(v) => updateAction(idx, { owner: v })}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <EditableCell
-                          value={a.deadline ?? ''}
-                          onChange={(v) => updateAction(idx, { deadline: v || null })}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <LevelBadge level={a.confidence} />
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <button
-                          onClick={() => updateAction(idx, { verified: !a.verified })}
-                          className={cn(
-                            'inline-flex size-7 items-center justify-center rounded-lg border-2 transition-all',
-                            a.verified
-                              ? 'border-chart-3 bg-chart-3 text-white'
-                              : 'border-border hover:border-chart-3 hover:bg-chart-3/10'
-                          )}
-                        >
-                          {a.verified && <Check className="size-4" />}
-                        </button>
-                      </TableCell>
-                      <TableCell>
-                        <SourceQuote quote={a.source_quote} />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+          <CardContent>
+            <div className="space-y-3">
+              {output.action_items.map((a, idx) => (
+                <div key={a.id} className="rounded-xl border border-border/50 bg-secondary/20 p-4 space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-xs text-muted-foreground">{a.id}</span>
+                    <LevelBadge level={a.confidence} />
+                    <button
+                      onClick={() => updateAction(idx, { verified: !a.verified })}
+                      className={cn(
+                        'inline-flex items-center gap-1.5 rounded-lg border-2 px-2 py-0.5 text-xs font-medium transition-all',
+                        a.verified
+                          ? 'border-chart-3 bg-chart-3 text-white'
+                          : 'border-border text-muted-foreground hover:border-chart-3 hover:bg-chart-3/10'
+                      )}
+                    >
+                      <Check className="size-3" />
+                      Verified
+                    </button>
+                  </div>
+                  <div>
+                    <EditableCell
+                      value={a.task}
+                      onChange={(v) => updateAction(idx, { task: v })}
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+                    <span>
+                      Owner:{' '}
+                      <EditableCell
+                        value={a.owner}
+                        onChange={(v) => updateAction(idx, { owner: v })}
+                      />
+                    </span>
+                    <span>
+                      Deadline:{' '}
+                      <EditableCell
+                        value={a.deadline ?? ''}
+                        onChange={(v) => updateAction(idx, { deadline: v || null })}
+                      />
+                    </span>
+                  </div>
+                  <SourceQuote quote={a.source_quote} />
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>
@@ -491,44 +454,32 @@ export function ReviewView({ meetingId, aiOutput: initialOutput, onApprove }: Re
               </div>
             </div>
           </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-border/50 hover:bg-transparent">
-                    <TableHead className="w-16 text-muted-foreground">ID</TableHead>
-                    <TableHead className="text-muted-foreground">Risk</TableHead>
-                    <TableHead className="w-28 text-muted-foreground">Raised By</TableHead>
-                    <TableHead className="w-24 text-muted-foreground">Severity</TableHead>
-                    <TableHead className="w-28 text-muted-foreground">Source</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {output.open_risks.map((r, idx) => (
-                    <TableRow key={r.id} className="border-border/50 hover:bg-secondary/30">
-                      <TableCell className="font-mono text-xs text-muted-foreground">{r.id}</TableCell>
-                      <TableCell>
-                        <EditableCell
-                          value={r.description}
-                          onChange={(v) => updateRisk(idx, { description: v })}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <EditableCell
-                          value={r.raised_by}
-                          onChange={(v) => updateRisk(idx, { raised_by: v })}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <LevelBadge level={r.severity} />
-                      </TableCell>
-                      <TableCell>
-                        <SourceQuote quote={r.source_quote} />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+          <CardContent>
+            <div className="space-y-3">
+              {output.open_risks.map((r, idx) => (
+                <div key={r.id} className="rounded-xl border border-border/50 bg-secondary/20 p-4 space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-xs text-muted-foreground">{r.id}</span>
+                    <LevelBadge level={r.severity} />
+                  </div>
+                  <div>
+                    <EditableCell
+                      value={r.description}
+                      onChange={(v) => updateRisk(idx, { description: v })}
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+                    <span>
+                      Raised by:{' '}
+                      <EditableCell
+                        value={r.raised_by}
+                        onChange={(v) => updateRisk(idx, { raised_by: v })}
+                      />
+                    </span>
+                  </div>
+                  <SourceQuote quote={r.source_quote} />
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>
