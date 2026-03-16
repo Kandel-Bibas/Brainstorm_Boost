@@ -2,14 +2,14 @@ import { useState, useCallback, useEffect } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'sonner'
 import { Header, type View } from '@/components/layout/Header'
-import { UploadView } from '@/components/upload/UploadView'
-import { ReviewView } from '@/components/review/ReviewView'
-import { QueryView } from '@/components/query/QueryView'
+import { Dashboard } from '@/components/dashboard/Dashboard'
+import { MeetingDetail } from '@/components/meeting/MeetingDetail'
 import { MeetingsView } from '@/components/meetings/MeetingsView'
-import { PrepView } from '@/components/prep/PrepView'
 import { LiveView } from '@/components/live/LiveView'
 import { JoinView } from '@/components/live/JoinView'
-import type { AiOutput } from '@/lib/api'
+import { UploadModal } from '@/components/upload/UploadModal'
+import { ChatPanel } from '@/components/chat/ChatPanel'
+import { ChatButton } from '@/components/chat/ChatButton'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -21,9 +21,13 @@ const queryClient = new QueryClient({
 })
 
 export default function App() {
-  const [view, setView] = useState<View>('upload')
+  const [view, setView] = useState<View>('dashboard')
   const [currentMeetingId, setCurrentMeetingId] = useState<string | null>(null)
-  const [currentAiOutput, setCurrentAiOutput] = useState<AiOutput | null>(null)
+  const [chatOpen, setChatOpen] = useState(false)
+  const [chatContextMeetingId, setChatContextMeetingId] = useState<string | null>(null)
+  const [uploadModalOpen, setUploadModalOpen] = useState(false)
+  const [prepAgendaPreFill, setPrepAgendaPreFill] = useState('')
+  const [prepParticipantsPreFill, setPrepParticipantsPreFill] = useState('')
   const [isJoinPage, setIsJoinPage] = useState(false)
 
   useEffect(() => {
@@ -32,27 +36,27 @@ export default function App() {
     }
   }, [])
 
-  const handleAnalysisComplete = useCallback((meetingId: string, aiOutput: AiOutput) => {
+  const navigateToMeeting = useCallback((meetingId: string) => {
     setCurrentMeetingId(meetingId)
-    setCurrentAiOutput(aiOutput)
-    setView('review')
+    setChatContextMeetingId(meetingId)
+    setView('meeting-detail')
   }, [])
 
-  const handleSelectMeeting = useCallback((meetingId: string, aiOutput: AiOutput) => {
-    setCurrentMeetingId(meetingId)
-    setCurrentAiOutput(aiOutput)
-    setView('review')
+  const navigateToDashboard = useCallback((prepAgenda?: string, prepParticipants?: string) => {
+    setView('dashboard')
+    setChatContextMeetingId(null)
+    setCurrentMeetingId(null)
+    if (prepAgenda) setPrepAgendaPreFill(prepAgenda)
+    if (prepParticipants) setPrepParticipantsPreFill(prepParticipants)
   }, [])
-
-  const hasReview = currentMeetingId !== null && currentAiOutput !== null
 
   if (isJoinPage) {
     return (
       <QueryClientProvider client={queryClient}>
         <JoinView />
-        <Toaster 
-          position="bottom-right" 
-          richColors 
+        <Toaster
+          position="bottom-right"
+          richColors
           toastOptions={{
             className: 'bg-card border-border text-foreground',
           }}
@@ -72,28 +76,75 @@ export default function App() {
 
         {/* Content */}
         <div className="relative z-10">
-          <Header currentView={view} onViewChange={setView} hasReview={hasReview} />
+          <Header
+            currentView={view}
+            onViewChange={setView}
+            onChatToggle={() => setChatOpen(!chatOpen)}
+            chatOpen={chatOpen}
+          />
           <main className="mx-auto max-w-7xl px-6 py-10">
             <div className="fade-in">
-              {view === 'upload' && (
-                <UploadView onAnalysisComplete={handleAnalysisComplete} />
+              {view === 'dashboard' && (
+                <Dashboard
+                  onUploadClick={() => setUploadModalOpen(true)}
+                  onGoLive={() => setView('live')}
+                  onMeetingClick={navigateToMeeting}
+                  prepAgendaPreFill={prepAgendaPreFill}
+                  prepParticipantsPreFill={prepParticipantsPreFill}
+                  onClearPreFill={() => {
+                    setPrepAgendaPreFill('')
+                    setPrepParticipantsPreFill('')
+                  }}
+                />
               )}
-              {view === 'review' && currentMeetingId && currentAiOutput && (
-                <ReviewView meetingId={currentMeetingId} aiOutput={currentAiOutput} />
+              {view === 'meeting-detail' && currentMeetingId && (
+                <MeetingDetail
+                  meetingId={currentMeetingId}
+                  onBack={() => navigateToDashboard()}
+                  onOpenChat={(id) => {
+                    setChatContextMeetingId(id)
+                    setChatOpen(true)
+                  }}
+                  onPrepareFollowUp={(agenda, participants) =>
+                    navigateToDashboard(agenda, participants)
+                  }
+                />
               )}
-              {view === 'prepare' && <PrepView />}
-              {view === 'query' && <QueryView />}
-              {view === 'live' && <LiveView />}
-              {view === 'meetings' && (
-                <MeetingsView onSelectMeeting={handleSelectMeeting} />
+              {view === 'live' && (
+                <LiveView onReviewMeeting={navigateToMeeting} />
+              )}
+              {view === 'history' && (
+                <MeetingsView onSelectMeeting={(id) => navigateToMeeting(id)} />
               )}
             </div>
           </main>
         </div>
+
+        {/* Chat */}
+        <ChatButton onClick={() => setChatOpen(!chatOpen)} isOpen={chatOpen} />
+        <ChatPanel
+          isOpen={chatOpen}
+          onClose={() => setChatOpen(false)}
+          contextMeetingId={chatContextMeetingId}
+          onNavigateToMeeting={(id) => {
+            setChatOpen(false)
+            navigateToMeeting(id)
+          }}
+        />
+
+        {/* Upload Modal */}
+        <UploadModal
+          open={uploadModalOpen}
+          onOpenChange={setUploadModalOpen}
+          onAnalysisComplete={(meetingId) => {
+            setUploadModalOpen(false)
+            navigateToMeeting(meetingId)
+          }}
+        />
       </div>
-      <Toaster 
-        position="bottom-right" 
-        richColors 
+      <Toaster
+        position="bottom-right"
+        richColors
         toastOptions={{
           className: 'bg-card border-border text-foreground',
         }}

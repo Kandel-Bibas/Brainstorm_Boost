@@ -35,6 +35,7 @@ import { cn } from '@/lib/utils'
 interface ReviewViewProps {
   meetingId: string
   aiOutput: AiOutput
+  onApprove?: (exports: { md?: string; json?: string }) => void
 }
 
 // --- Confidence / Severity badge ---
@@ -126,7 +127,7 @@ function SourceQuote({ quote }: { quote: string }) {
   )
 }
 
-export function ReviewView({ meetingId, aiOutput: initialOutput }: ReviewViewProps) {
+export function ReviewView({ meetingId, aiOutput: initialOutput, onApprove }: ReviewViewProps) {
   const [output, setOutput] = useState<AiOutput>(initialOutput)
   const [approving, setApproving] = useState(false)
   const [approved, setApproved] = useState(false)
@@ -162,10 +163,12 @@ export function ReviewView({ meetingId, aiOutput: initialOutput }: ReviewViewPro
       setApproving(true)
       const result = await api.approve(meetingId, output)
       setApproved(true)
-      setExportLinks({
+      const links = {
         md: result.exports?.markdown,
         json: result.exports?.json,
-      })
+      }
+      setExportLinks(links)
+      onApprove?.(links)
       toast.success('Meeting approved and exported')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Approval failed')

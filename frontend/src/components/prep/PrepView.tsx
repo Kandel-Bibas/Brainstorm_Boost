@@ -37,9 +37,14 @@ interface ReadAheadResult {
   assumptions: string[]
 }
 
-export function PrepView() {
-  const [agenda, setAgenda] = useState('')
-  const [participantsRaw, setParticipantsRaw] = useState('')
+interface PrepViewProps {
+  initialAgenda?: string
+  initialParticipants?: string
+}
+
+export function PrepView({ initialAgenda, initialParticipants }: PrepViewProps = {}) {
+  const [agenda, setAgenda] = useState(initialAgenda ?? '')
+  const [participantsRaw, setParticipantsRaw] = useState(initialParticipants ?? '')
   const [provider, setProvider] = useState<string | undefined>(undefined)
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<ReadAheadResult | null>(null)

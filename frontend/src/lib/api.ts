@@ -133,6 +133,31 @@ export const api = {
     return res.json();
   },
 
+  async sendChatMessage(message: string, sessionId?: string, contextMeetingId?: string, provider?: string) {
+    const res = await fetch(`${BASE}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message,
+        session_id: sessionId ?? null,
+        context_meeting_id: contextMeetingId ?? null,
+        provider: provider ?? null,
+      }),
+    });
+    if (!res.ok) throw new Error((await res.json()).detail);
+    return res.json() as Promise<{
+      session_id: string;
+      response: string;
+      sources: Array<{ meeting_id: string; meeting_title: string; content: string; item_type: string }>;
+    }>;
+  },
+
+  async getChatMessages(sessionId: string) {
+    const res = await fetch(`${BASE}/api/chat/${sessionId}/messages`);
+    if (!res.ok) throw new Error((await res.json()).detail);
+    return res.json();
+  },
+
   async updateActionItemStatus(itemId: string, status: 'completed' | 'cancelled') {
     const res = await fetch(`${BASE}/api/prep/action-items/${itemId}/status`, {
       method: 'POST',

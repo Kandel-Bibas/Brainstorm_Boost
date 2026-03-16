@@ -16,7 +16,11 @@ import { cn } from '@/lib/utils'
 
 type SessionPhase = 'setup' | 'active' | 'ended'
 
-export function LiveView() {
+interface LiveViewProps {
+  onReviewMeeting?: (meetingId: string) => void
+}
+
+export function LiveView({ onReviewMeeting }: LiveViewProps = {}) {
   const [phase, setPhase] = useState<SessionPhase>('setup')
   const [agenda, setAgenda] = useState('')
   const [participantsRaw, setParticipantsRaw] = useState('')
@@ -197,11 +201,14 @@ export function LiveView() {
     }
   }
 
+  const [endedMeetingId, setEndedMeetingId] = useState<string | null>(null)
+
   const handleEnd = async () => {
     try {
-      await api.endLiveSession()
+      const result = await api.endLiveSession()
       wsRef.current?.close()
       recognitionRef.current?.stop()
+      setEndedMeetingId(result.meeting_id ?? null)
       setPhase('ended')
       toast.success('Session ended')
     } catch (err) {
@@ -373,14 +380,25 @@ export function LiveView() {
                 recorded and saved to your history.
               </p>
             </div>
-            <Button
-              variant="outline"
-              className="gap-2 rounded-xl border-border/50"
-              onClick={() => setPhase('setup')}
-            >
-              <ExternalLink className="size-4" />
-              Start New Session
-            </Button>
+            <div className="flex items-center gap-3">
+              {endedMeetingId && onReviewMeeting && (
+                <Button
+                  onClick={() => onReviewMeeting(endedMeetingId)}
+                  className="gap-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90"
+                >
+                  <Sparkles className="size-4" />
+                  Review This Meeting
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                className="gap-2 rounded-xl border-border/50"
+                onClick={() => setPhase('setup')}
+              >
+                <ExternalLink className="size-4" />
+                Start New Session
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>

@@ -1,13 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 import { FileText, Loader2, Calendar, ChevronRight, Clock } from 'lucide-react'
-import { toast } from 'sonner'
-import { api, type AiOutput } from '@/lib/api'
+import { api } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
 interface MeetingsViewProps {
-  onSelectMeeting: (meetingId: string, aiOutput: AiOutput) => void
+  onSelectMeeting: (meetingId: string) => void
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -53,17 +52,8 @@ export function MeetingsView({ onSelectMeeting }: MeetingsViewProps) {
     queryFn: api.getMeetings,
   })
 
-  const handleRowClick = async (id: string, status: string) => {
-    if (status === 'uploaded') {
-      toast.info('This meeting has not been analyzed yet.')
-      return
-    }
-    try {
-      const detail = await api.getMeeting(id)
-      onSelectMeeting(id, detail.verified_output_json ?? detail.ai_output_json)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load meeting')
-    }
+  const handleRowClick = (id: string) => {
+    onSelectMeeting(id)
   }
 
   return (
@@ -117,7 +107,7 @@ export function MeetingsView({ onSelectMeeting }: MeetingsViewProps) {
               {meetings.map((m) => (
                 <button
                   key={m.id}
-                  onClick={() => handleRowClick(m.id, m.status)}
+                  onClick={() => handleRowClick(m.id)}
                   className="flex w-full items-center gap-4 px-6 py-4 text-left transition-colors hover:bg-secondary/30"
                 >
                   <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary/10">
