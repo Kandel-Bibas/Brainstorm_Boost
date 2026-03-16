@@ -57,6 +57,20 @@ def init_db():
                 last_seen TEXT,
                 expertise_summary TEXT
             );
+            CREATE TABLE IF NOT EXISTS chat_sessions (
+                id TEXT PRIMARY KEY,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                sources_json TEXT,
+                context_meeting_id TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (session_id) REFERENCES chat_sessions(id)
+            );
         """)
 
 
@@ -231,3 +245,73 @@ def get_speaker_profile_by_name(name: str) -> dict | None:
     raw = profile.pop("topics_json", None)
     profile["topics"] = json.loads(raw) if raw else []
     return profile
+
+
+# ---------------------------------------------------------------------------
+# chat_sessions / chat_messages
+# ---------------------------------------------------------------------------
+
+def create_chat_session() -> str:
+    session_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT INTO chat_sessions (id, created_at) VALUES (?, ?)",
+            (session_id, now),
+        )
+    return session_id
+
+
+def get_chat_session(session_id: str) -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM chat_sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+    if row is None:
+        return None
+    return dict(row)
+
+
+def add_chat_message(
+    session_id: str,
+    role: str,
+    content: str,
+    sources: list | None = None,
+    context_meeting_id: str | None = None,
+) -> str:
+    msg_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    sources_json = json.dumps(sources) if sources is not None else None
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT INTO chat_messages "
+            "(id, session_id, role, content, sources_json, context_meeting_id, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (msg_id, session_id, role, content, sources_json, context_meeting_id, now),
+        )
+    return msg_id
+
+
+def get_chat_messages(session_id: str, limit: int | None = None) -> list[dict]:
+    with get_connection() as conn:
+        if limit is not None:
+            # Get the most recent N messages, then return in chronological order
+            rows = conn.execute(
+                "SELECT * FROM ("
+                "  SELECT * FROM chat_messages WHERE session_id = ? ORDER BY created_at DESC LIMIT ?"
+                ") ORDER BY created_at ASC",
+                (session_id, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM chat_messages WHERE session_id = ? ORDER BY created_at ASC",
+                (session_id,),
+            ).fetchall()
+
+    result = []
+    for row in rows:
+        msg = dict(row)
+        raw_sources = msg.pop("sources_json", None)
+        msg["sources"] = json.loads(raw_sources) if raw_sources is not None else None
+        result.append(msg)
+    return result
