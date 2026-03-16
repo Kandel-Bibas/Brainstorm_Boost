@@ -1,6 +1,8 @@
 """ChatSession: manages chat history and RAG-based answer generation."""
 from __future__ import annotations
 
+import logging
+
 from database import (
     create_chat_session,
     get_chat_session,
@@ -8,6 +10,8 @@ from database import (
     get_chat_messages,
 )
 from llm_client import generate
+
+logger = logging.getLogger(__name__)
 
 CHAT_SYSTEM_PROMPT = """You are Brainstorm Boost, an AI assistant that helps teams understand their meeting history.
 You answer questions by synthesizing information from past meeting records.
@@ -37,18 +41,25 @@ class ChatSession:
         # 2. Build conversation history (last 10)
         history = self._build_conversation_history()
 
-        # 3. RAG: query ChromaDB
-        context_items = self._build_rag_context(message, memory, context_meeting_id=context_meeting_id)
+        # 3. RAG: dual retrieval (graph + vector)
+        rag_context = self._build_rag_context(message, memory, context_meeting_id=context_meeting_id)
 
         # 4. Build prompt with history + RAG context
-        prompt = self._build_prompt(message, history, context_items)
+        prompt = self._build_prompt(message, history, rag_context)
 
         # 5. Call llm_client.generate() with system_prompt=CHAT_SYSTEM_PROMPT
         result = generate(prompt, provider=provider, system_prompt=CHAT_SYSTEM_PROMPT)
 
         # 6. Extract answer + sources from LLM response
         answer = result.get("answer", str(result))
-        sources = result.get("sources", [])
+        raw_sources = result.get("sources", [])
+
+        # Sources can come from both graph context and transcript context
+        transcript_chunks = rag_context.get("transcript_context", [])
+        graph_context = rag_context.get("graph_context", "")
+        all_titles = {item.get("meeting_title", "") for item in transcript_chunks if item.get("meeting_title")}
+        # Also include any titles mentioned in graph context lines (best-effort)
+        sources = [s for s in raw_sources if s] if raw_sources else list(all_titles)
 
         # 7. Save assistant message + sources to DB
         add_chat_message(
@@ -69,57 +80,69 @@ class ChatSession:
     def _build_conversation_history(self) -> list[dict]:
         return get_chat_messages(self.session_id, limit=MAX_HISTORY_MESSAGES)
 
-    def _build_rag_context(self, query: str, memory, context_meeting_id: str = None) -> list[dict]:
-        """Retrieve relevant context from ChromaDB.
+    def _build_rag_context(self, query_text: str, memory, context_meeting_id: str = None) -> dict:
+        """Dual retrieval: graph traversal + vector search."""
+        from knowledge_graph import KnowledgeGraph
 
-        Two-query strategy when context_meeting_id is set:
-        - Query 1: larger global query then filter by meeting_id for scoped results (up to 3)
-        - Query 2: global query for 3 additional results
-        Without context_meeting_id: single global query for 5 results.
-        """
-        if context_meeting_id is None:
-            return memory.query(query, top_k=5)
+        # Path 1: Graph query
+        kg = KnowledgeGraph()
+        graph_text = ""
+        try:
+            graph_results = kg.query(query_text, meeting_id=context_meeting_id)
+            if graph_results["nodes"]:
+                graph_text = kg.serialize_subgraph_for_prompt(graph_results)
+        except Exception:
+            logger.exception("Graph query failed")
 
-        # Scoped query: fetch more results and filter by the target meeting
-        all_results = memory.query(query, top_k=10)
-        scoped = [r for r in all_results if r.get("meeting_id") == context_meeting_id][:3]
+        # Path 2: Vector search (existing ChromaDB)
+        transcript_chunks = []
+        try:
+            if context_meeting_id:
+                all_results = memory.query(query_text, top_k=6)
+                scoped = [r for r in all_results if r.get("meeting_id") == context_meeting_id][:3]
+                global_results = [r for r in all_results if r.get("meeting_id") != context_meeting_id][:3]
+                transcript_chunks = scoped + global_results
+            else:
+                transcript_chunks = memory.query(query_text, top_k=5)
+        except Exception:
+            logger.exception("Vector search failed")
 
-        # Global query for additional context
-        global_results = memory.query(query, top_k=3)
+        return {
+            "graph_context": graph_text,
+            "transcript_context": transcript_chunks,
+        }
 
-        # Combine, deduplicate by content
-        seen_contents: set[str] = set()
-        combined: list[dict] = []
-        for item in scoped + global_results:
-            content = item.get("content", "")
-            if content not in seen_contents:
-                seen_contents.add(content)
-                combined.append(item)
-
-        return combined
-
-    def _build_prompt(self, message: str, history: list[dict], context_items: list[dict]) -> str:
-        """Build the full prompt including conversation history and RAG context."""
+    def _build_prompt(self, message: str, history: list[dict], rag_context: dict) -> str:
+        """Build the full prompt including conversation history and dual RAG context."""
         parts: list[str] = []
-
-        if context_items:
-            context_text = "\n".join(
-                f"- [{item['meeting_title']}] {item['content']}" for item in context_items
-            )
-            parts.append(f"Meeting Knowledge Base:\n{context_text}\n")
 
         if history:
             history_lines = []
             for msg in history:
                 role_label = "User" if msg["role"] == "user" else "Assistant"
                 history_lines.append(f"{role_label}: {msg['content']}")
-            parts.append("Conversation history:\n" + "\n".join(history_lines) + "\n")
+            parts.append("Previous conversation:\n" + "\n".join(history_lines) + "\n")
 
-        parts.append(f"User: {message}")
+        graph_context = rag_context.get("graph_context", "") if isinstance(rag_context, dict) else ""
+        transcript_chunks = rag_context.get("transcript_context", []) if isinstance(rag_context, dict) else []
+
+        parts.append(f"Knowledge Graph:\n{graph_context}\n" if graph_context else "Knowledge Graph:\n(none)\n")
+
+        if transcript_chunks:
+            excerpt_lines = "\n".join(
+                f"- [{item.get('meeting_title', 'Unknown')}] {item.get('content', '')}"
+                for item in transcript_chunks
+            )
+            parts.append(f"Original Transcript Excerpts:\n{excerpt_lines}\n")
+        else:
+            parts.append("Original Transcript Excerpts:\n(none)\n")
+
+        parts.append(f"Current question: {message}")
         parts.append(
-            '\nReturn a JSON object with this exact format:\n'
-            '{"answer": "your synthesized answer citing specific meetings", "sources": ["meeting title 1", "meeting title 2"]}\n'
-            'Only use information from the provided meeting excerpts. If the excerpts don\'t contain enough information, say so.'
+            '\nReturn a JSON object:\n'
+            '{"answer": "...", "sources": ["meeting title 1"]}\n'
+            '\nIMPORTANT: Only use information from the provided knowledge graph and transcripts. '
+            "If you don't have enough information, say so."
         )
 
         return "\n".join(parts)
