@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { FileText, Loader2, Calendar, ChevronRight, Clock } from 'lucide-react'
+import { FileText, Loader2, Calendar, ChevronRight, Clock, Search } from 'lucide-react'
 import { api } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -46,11 +47,22 @@ function formatTime(iso: string): string {
   }
 }
 
+const STATUS_OPTIONS = ['all', 'uploaded', 'analyzed', 'approved'] as const
+
 export function MeetingsView({ onSelectMeeting }: MeetingsViewProps) {
   const { data: meetings, isLoading } = useQuery({
     queryKey: ['meetings'],
     queryFn: api.getMeetings,
   })
+
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+
+  const filteredMeetings = meetings?.filter((m) => {
+    const matchesSearch = !search || m.title.toLowerCase().includes(search.toLowerCase())
+    const matchesStatus = statusFilter === 'all' || m.status === statusFilter
+    return matchesSearch && matchesStatus
+  }) ?? []
 
   const handleRowClick = (id: string) => {
     onSelectMeeting(id)
@@ -69,6 +81,44 @@ export function MeetingsView({ onSelectMeeting }: MeetingsViewProps) {
           View and revisit past meeting analyses.
         </p>
       </div>
+
+      {/* Search + Status filters */}
+      {!isLoading && meetings && meetings.length > 0 && (
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          {/* Search input */}
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search meetings…"
+              className={cn(
+                'w-full rounded-xl border border-border/50 bg-secondary/20 py-2 pl-9 pr-4 text-sm text-foreground',
+                'placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 focus:bg-primary/5 transition-all'
+              )}
+            />
+          </div>
+
+          {/* Status pill filters */}
+          <div className="flex items-center gap-1 rounded-xl bg-secondary/50 p-1 ring-1 ring-border/50">
+            {STATUS_OPTIONS.map((status) => (
+              <button
+                key={status}
+                onClick={() => setStatusFilter(status)}
+                className={cn(
+                  'rounded-lg px-3 py-1 text-xs font-medium capitalize transition-all duration-150',
+                  statusFilter === status
+                    ? 'bg-card text-foreground shadow-sm ring-1 ring-border/50'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                {status === 'all' ? 'All' : status}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {isLoading && (
         <div className="flex flex-col items-center justify-center py-20">
@@ -92,19 +142,29 @@ export function MeetingsView({ onSelectMeeting }: MeetingsViewProps) {
         </div>
       )}
 
-      {!isLoading && meetings && meetings.length > 0 && (
+      {!isLoading && meetings && meetings.length > 0 && filteredMeetings.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-secondary/50 ring-1 ring-border">
+            <Search className="size-6 text-muted-foreground/50" />
+          </div>
+          <h3 className="text-lg font-semibold text-foreground">No results found</h3>
+          <p className="mt-2 text-muted-foreground">Try adjusting your search or filter.</p>
+        </div>
+      )}
+
+      {!isLoading && meetings && meetings.length > 0 && filteredMeetings.length > 0 && (
         <Card className="glass border-border/50">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-lg">
               All Meetings
               <Badge variant="secondary" className="bg-secondary/50">
-                {meetings.length}
+                {filteredMeetings.length}
               </Badge>
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             <div className="divide-y divide-border/50">
-              {meetings.map((m) => (
+              {filteredMeetings.map((m) => (
                 <button
                   key={m.id}
                   onClick={() => handleRowClick(m.id)}
