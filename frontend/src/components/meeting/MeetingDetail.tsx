@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight, Home, Loader2, MessageCircle, BookOpen, Download, AlertCircle, Database, DatabaseZap, GitMerge } from 'lucide-react'
+import { ChevronRight, Home, Loader2, MessageCircle, BookOpen, Download, AlertCircle, Database, DatabaseZap, GitMerge, Calendar, Users, Clock, Target } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, type AiOutput } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -221,7 +221,7 @@ export function MeetingDetail({ meetingId, onBack, onPrepareFollowUp }: MeetingD
               ) : (
                 <Database className="size-3.5" />
               )}
-              {indexed ? 'In KB' : 'Add to KB'}
+              {indexed ? 'Searchable' : 'Make Searchable'}
             </Button>
           )}
         </div>
@@ -249,7 +249,61 @@ export function MeetingDetail({ meetingId, onBack, onPrepareFollowUp }: MeetingD
         </div>
       )}
 
-      {/* Main content with timeline + split pane */}
+      {/* Meeting details */}
+      {aiOutput && (
+        <div className="px-4 py-4 border-b border-border/30">
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <div className="flex items-center gap-3">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                <Target className="size-4 text-primary" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground">Title</p>
+                <p className="text-sm font-medium text-foreground truncate">{aiOutput.meeting_metadata.title}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-chart-2/10">
+                <Calendar className="size-4 text-chart-2" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground">Date</p>
+                <p className="text-sm font-medium text-foreground">{aiOutput.meeting_metadata.date_mentioned ?? 'Not mentioned'}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-chart-3/10">
+                <Users className="size-4 text-chart-3" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground">Participants</p>
+                <p className="text-sm font-medium text-foreground truncate">
+                  {aiOutput.meeting_metadata.participants.length > 0
+                    ? aiOutput.meeting_metadata.participants.join(', ')
+                    : 'Unknown'}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-chart-4/10">
+                <Clock className="size-4 text-chart-4" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground">Duration</p>
+                <p className="text-sm font-medium text-foreground">{aiOutput.meeting_metadata.duration_estimate ?? 'N/A'}</p>
+              </div>
+            </div>
+          </div>
+          {aiOutput.state_of_direction && (
+            <div className="mt-3 rounded-lg bg-secondary/20 border border-border/30 px-4 py-3">
+              <p className="text-xs font-medium text-muted-foreground mb-1">State of Direction</p>
+              <p className="text-sm text-foreground/90 leading-relaxed">{aiOutput.state_of_direction}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Analysis with timeline + split pane */}
       {aiOutput && (
         <>
           {/* Timeline */}
