@@ -19,6 +19,14 @@ import { api, type AiOutput } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { ConnectionChips } from '@/components/review/ConnectionChips'
 
@@ -207,6 +215,7 @@ export function ReviewView({
   const [approving, setApproving] = useState(false)
   const [approved, setApproved] = useState(false)
   const [exportLinks, setExportLinks] = useState<{ md?: string; json?: string }>({})
+  const [deleteDialog, setDeleteDialog] = useState<{ type: string; label: string; idx: number } | null>(null)
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
   const [confidenceFilter, setConfidenceFilter] = useState<ConfidenceFilter>('all')
   const [showUnverifiedOnly, setShowUnverifiedOnly] = useState(false)
@@ -244,10 +253,15 @@ export function ReviewView({
 
   // --- Delete helpers ---
 
-  const deleteDecision = useCallback((idx: number) => {
+  const confirmDeleteDecision = useCallback((idx: number) => {
     const item = output.decisions[idx]
     if (!item) return
-    if (!window.confirm(`Remove decision "${item.description.slice(0, 60)}..."? This can be undone.`)) return
+    setDeleteDialog({ type: 'decision', label: item.description, idx })
+  }, [output.decisions])
+
+  const executeDeleteDecision = useCallback((idx: number) => {
+    const item = output.decisions[idx]
+    if (!item) return
     setDeletedItems(prev => new Map(prev).set(item.id, { type: 'decision', item, index: idx }))
     setOutput(prev => ({ ...prev, decisions: prev.decisions.filter((_, i) => i !== idx) }))
     toast(`Removed ${item.id}`, {
@@ -269,10 +283,15 @@ export function ReviewView({
     })
   }, [output.decisions])
 
-  const deleteAction = useCallback((idx: number) => {
+  const confirmDeleteAction = useCallback((idx: number) => {
     const item = output.action_items[idx]
     if (!item) return
-    if (!window.confirm(`Remove action item "${item.task.slice(0, 60)}..."? This can be undone.`)) return
+    setDeleteDialog({ type: 'action item', label: item.task, idx })
+  }, [output.action_items])
+
+  const executeDeleteAction = useCallback((idx: number) => {
+    const item = output.action_items[idx]
+    if (!item) return
     setDeletedItems(prev => new Map(prev).set(item.id, { type: 'action_item', item, index: idx }))
     setOutput(prev => ({ ...prev, action_items: prev.action_items.filter((_, i) => i !== idx) }))
     toast(`Removed ${item.id}`, {
@@ -294,10 +313,15 @@ export function ReviewView({
     })
   }, [output.action_items])
 
-  const deleteRisk = useCallback((idx: number) => {
+  const confirmDeleteRisk = useCallback((idx: number) => {
     const item = output.open_risks[idx]
     if (!item) return
-    if (!window.confirm(`Remove risk "${item.description.slice(0, 60)}..."? This can be undone.`)) return
+    setDeleteDialog({ type: 'risk', label: item.description, idx })
+  }, [output.open_risks])
+
+  const executeDeleteRisk = useCallback((idx: number) => {
+    const item = output.open_risks[idx]
+    if (!item) return
     setDeletedItems(prev => new Map(prev).set(item.id, { type: 'risk', item, index: idx }))
     setOutput(prev => ({ ...prev, open_risks: prev.open_risks.filter((_, i) => i !== idx) }))
     toast(`Removed ${item.id}`, {
@@ -373,6 +397,15 @@ export function ReviewView({
     passesFilter(r.severity, confidenceFilter) &&
     (!showUnverifiedOnly || !r.source_quote)
   )
+
+  const handleConfirmDelete = useCallback(() => {
+    if (!deleteDialog) return
+    const { type, idx } = deleteDialog
+    if (type === 'decision') executeDeleteDecision(idx)
+    else if (type === 'action item') executeDeleteAction(idx)
+    else if (type === 'risk') executeDeleteRisk(idx)
+    setDeleteDialog(null)
+  }, [deleteDialog, executeDeleteDecision, executeDeleteAction, executeDeleteRisk])
 
   return (
     <div className="space-y-4 p-4">
@@ -542,7 +575,7 @@ export function ReviewView({
                       {isExpanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
                     </button>
                     <button
-                      onClick={(e) => { e.stopPropagation(); deleteDecision(originalIdx) }}
+                      onClick={(e) => { e.stopPropagation(); confirmDeleteDecision(originalIdx) }}
                       className="p-0.5 text-muted-foreground/50 hover:text-destructive shrink-0"
                       title="Remove"
                     >
@@ -638,7 +671,7 @@ export function ReviewView({
                       {isExpanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
                     </button>
                     <button
-                      onClick={(e) => { e.stopPropagation(); deleteAction(originalIdx) }}
+                      onClick={(e) => { e.stopPropagation(); confirmDeleteAction(originalIdx) }}
                       className="p-0.5 text-muted-foreground/50 hover:text-destructive shrink-0"
                       title="Remove"
                     >
@@ -747,7 +780,7 @@ export function ReviewView({
                       {isExpanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
                     </button>
                     <button
-                      onClick={(e) => { e.stopPropagation(); deleteRisk(originalIdx) }}
+                      onClick={(e) => { e.stopPropagation(); confirmDeleteRisk(originalIdx) }}
                       className="p-0.5 text-muted-foreground/50 hover:text-destructive shrink-0"
                       title="Remove"
                     >
@@ -788,6 +821,51 @@ export function ReviewView({
           </div>
         </div>
       )}
+
+      {/* Delete confirmation dialog */}
+      <Dialog open={!!deleteDialog} onOpenChange={(open) => !open && setDeleteDialog(null)}>
+        <DialogContent className="glass border-border/50 sm:max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="flex size-10 items-center justify-center rounded-xl bg-destructive/10">
+                <AlertTriangle className="size-5 text-destructive" />
+              </div>
+              <div>
+                <DialogTitle>Remove {deleteDialog?.type}</DialogTitle>
+                <DialogDescription className="mt-1">
+                  This item will be removed from the analysis. You can undo after removing.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          {deleteDialog && (
+            <div className="py-2">
+              <p className="text-sm text-foreground">
+                "{deleteDialog.label.length > 100 ? deleteDialog.label.slice(0, 100) + '...' : deleteDialog.label}"
+              </p>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setDeleteDialog(null)}
+              className="rounded-xl border-border/50"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmDelete}
+              className="gap-2 rounded-xl"
+            >
+              <X className="size-4" />
+              Remove
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
