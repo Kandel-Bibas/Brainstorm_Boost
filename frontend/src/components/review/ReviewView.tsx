@@ -510,9 +510,12 @@ export function ReviewView({
 
       {/* Trust flags */}
       {output.trust_flags.length > 0 && (
-        <div className="flex items-start gap-3 rounded-xl border border-chart-4/30 bg-chart-4/5 p-3">
-          <AlertTriangle className="size-4 shrink-0 text-chart-4 mt-0.5" />
-          <div className="space-y-1">
+        <div className="flex items-start gap-4 rounded-xl border border-chart-4/30 bg-chart-4/10 p-4">
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-chart-4/20">
+            <AlertTriangle className="size-4 text-chart-4" />
+          </div>
+          <div className="space-y-1.5 flex-1">
+            <p className="text-sm font-semibold text-chart-4">Trust Flags ({output.trust_flags.length})</p>
             {output.trust_flags.map((flag, i) => {
               const isQuoteFlag = flag.includes('source quote')
               const isConfidenceFlag = flag.includes('low confidence')
@@ -595,13 +598,13 @@ export function ReviewView({
                     )}
                     <button
                       onClick={(e) => { e.stopPropagation(); toggleExpand(d.id) }}
-                      className="p-0.5 text-muted-foreground hover:text-foreground shrink-0"
+                      className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/50 shrink-0"
                     >
                       {isExpanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
                     </button>
                     <button
                       onClick={(e) => { e.stopPropagation(); confirmDeleteDecision(originalIdx) }}
-                      className="p-0.5 text-muted-foreground/50 hover:text-destructive shrink-0"
+                      className="p-1.5 rounded-lg text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 shrink-0"
                       title="Remove"
                     >
                       <X className="size-3.5" />
@@ -691,13 +694,13 @@ export function ReviewView({
                     )}
                     <button
                       onClick={(e) => { e.stopPropagation(); toggleExpand(a.id) }}
-                      className="p-0.5 text-muted-foreground hover:text-foreground shrink-0"
+                      className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/50 shrink-0"
                     >
                       {isExpanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
                     </button>
                     <button
                       onClick={(e) => { e.stopPropagation(); confirmDeleteAction(originalIdx) }}
-                      className="p-0.5 text-muted-foreground/50 hover:text-destructive shrink-0"
+                      className="p-1.5 rounded-lg text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 shrink-0"
                       title="Remove"
                     >
                       <X className="size-3.5" />
@@ -800,13 +803,13 @@ export function ReviewView({
                     )}
                     <button
                       onClick={(e) => { e.stopPropagation(); toggleExpand(r.id) }}
-                      className="p-0.5 text-muted-foreground hover:text-foreground shrink-0"
+                      className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/50 shrink-0"
                     >
                       {isExpanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
                     </button>
                     <button
                       onClick={(e) => { e.stopPropagation(); confirmDeleteRisk(originalIdx) }}
-                      className="p-0.5 text-muted-foreground/50 hover:text-destructive shrink-0"
+                      className="p-1.5 rounded-lg text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 shrink-0"
                       title="Remove"
                     >
                       <X className="size-3.5" />

@@ -25,16 +25,22 @@ TRANSCRIPT SEGMENT:
 {chunk}
 
 Entity types to extract:
-- person: participant names
+- person: participant names (ONLY actual human names, not "the class" or "the team")
 - topic: subjects being discussed
-- decision: things that were decided (explicit or emergent). Include WHO made/formulated the decision.
-- action_item: tasks someone committed to do (include owner, deadline if mentioned)
+- decision: things that were decided (explicit or emergent). For made_by, use ONLY the specific person's name who formulated/announced the decision — not groups, not surrounding context words.
+- action_item: tasks someone committed to do (include owner, deadline if mentioned). Only extract DISTINCT tasks — if two phrases describe the same task, extract it ONCE.
 - risk: concerns, blockers, potential problems raised
+
+CONFIDENCE CALIBRATION — be strict:
+- "high": ONLY when the person uses first-person singular + specific deliverable + specific timeframe with NO hedging. Example: "I'll have the report by Friday."
+- "medium": Any hedging (probably, should, might), vague scope, or no specific deadline. Example: "I can probably look into that."
+- "low": Vague, passive, deflecting, or assigned by someone else without confirmation. Example: "We should think about that." or "Someone needs to handle this."
+- Default to "medium" when unsure. Do NOT default to "high".
 
 For each decision, action_item, and risk:
 1. Include a source_quote with the EXACT words from the transcript. Copy verbatim — do not paraphrase.
 2. Include the speaker name (who said it) in the source_quote_speaker field.
-3. For decisions, always include made_by (who formulated/announced the decision).
+3. For decisions, made_by must be a SINGLE person's name (not "the team" or "Paige's class").
 
 Return JSON (no markdown fencing):
 {{"entities": [
@@ -315,9 +321,9 @@ def _format_entity_list(entities: list[dict]) -> str:
 # --- Deduplication (Fix 1: Semantic dedup) ---
 
 DEDUP_THRESHOLDS = {
-    "decision": 0.75,
-    "action_item": 0.80,
-    "risk": 0.80,
+    "decision": 0.70,
+    "action_item": 0.70,
+    "risk": 0.75,
 }
 
 
