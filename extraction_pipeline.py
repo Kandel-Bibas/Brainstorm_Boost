@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 from knowledge_graph import KnowledgeGraph
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 ENTITY_SYSTEM_PROMPT = """You are an entity extraction system. You identify people, topics, decisions, action items, and risks from meeting transcripts. Return structured JSON only."""
 
-RELATIONSHIP_SYSTEM_PROMPT = """You are a relationship extraction system. Given a list of numbered entities from a meeting, you identify how they are connected. Return structured JSON only."""
+RESOLUTION_SYSTEM_PROMPT = """You are a meeting analysis reviewer. You clean, enrich, and connect entities extracted from meeting transcripts. You identify duplicates, classify commitment types, correct entity types, and map relationships. Return structured JSON only."""
 
 SYNTHESIS_SYSTEM_PROMPT = """You are a meeting analyst. Given a structured knowledge graph of a meeting, you produce a comprehensive meeting analysis. Return structured JSON only."""
 
@@ -30,16 +31,18 @@ Entity types to extract:
 - action_item: tasks someone committed to do (include owner, deadline if mentioned)
 - risk: concerns, blockers, potential problems raised
 
+For each decision, action_item, and risk, include a source_quote field with the EXACT words from the transcript that support this entity. Copy the words verbatim — do not paraphrase.
+
 Return JSON (no markdown fencing):
 {{"entities": [
   {{"type": "person", "content": "name"}},
   {{"type": "topic", "content": "topic description"}},
-  {{"type": "decision", "content": "what was decided", "properties": {{"confidence": "high|medium|low"}}}},
-  {{"type": "action_item", "content": "task description", "properties": {{"owner": "name", "deadline": "when", "confidence": "high|medium|low"}}}},
-  {{"type": "risk", "content": "concern description", "properties": {{"severity": "high|medium|low", "raised_by": "name"}}}}
+  {{"type": "decision", "content": "what was decided", "properties": {{"confidence": "high|medium|low"}}, "source_quote": "exact words from the transcript"}},
+  {{"type": "action_item", "content": "task description", "properties": {{"owner": "name", "deadline": "when", "confidence": "high|medium|low"}}, "source_quote": "exact words from the transcript"}},
+  {{"type": "risk", "content": "concern description", "properties": {{"severity": "high|medium|low", "raised_by": "name"}}, "source_quote": "exact words from the transcript"}}
 ]}}"""
 
-RELATIONSHIP_PROMPT_TEMPLATE = """Identify relationships between these numbered entities from a meeting.
+RESOLUTION_PROMPT_TEMPLATE = """You are reviewing and enriching entities extracted from a meeting transcript.
 
 ENTITIES (use ONLY these IDs):
 {entity_list}
@@ -47,21 +50,32 @@ ENTITIES (use ONLY these IDs):
 TRANSCRIPT CONTEXT:
 {context}
 
-Relationship types:
-- DECIDED: person → decision
-- RATIFIED: person → decision (confirmed/agreed)
-- OWNS: person → action_item
-- RAISED: person → risk
-- DISCUSSED: person → topic
-- DEPENDS_ON: action_item → action_item
-- RELATES_TO: any → any (general connection)
+Perform these tasks:
+
+1. FLAG DUPLICATES: List any entity pairs that are semantically the same thing.
+2. CLASSIFY COMMITMENTS: For each action_item, determine:
+   - commitment_type: "volunteered" (person offered), "assigned" (someone else directed them), "conditional" (hedged/qualified)
+3. CORRECT TYPES: Flag any entity whose type seems wrong (e.g., a "decision" that is actually an observation or question).
+4. IDENTIFY RELATIONSHIPS using these types:
+   - DECIDED: person -> decision
+   - RATIFIED: person -> decision
+   - OWNS: person -> action_item
+   - RAISED: person -> risk
+   - DISCUSSED: person -> topic
+   - DEPENDS_ON: action_item -> action_item
+   - RELATES_TO: any -> any
 
 Return JSON (no markdown fencing):
-{{"relationships": [
-  {{"source": "E1", "edge_type": "DECIDED", "target": "E3"}}
-]}}
+{{
+  "duplicates": [{{"keep": "E1", "remove": "E5", "reason": "same decision rephrased"}}],
+  "commitment_updates": [{{"entity_id": "E4", "commitment_type": "volunteered"}}],
+  "type_corrections": [{{"entity_id": "E3", "current_type": "decision", "correct_type": "action_item", "reason": "this is a task, not a decision"}}],
+  "relationships": [
+    {{"source": "E1", "edge_type": "DECIDED", "target": "E3"}}
+  ]
+}}
 
-IMPORTANT: Use ONLY the entity IDs listed above. Do not invent new IDs."""
+IMPORTANT: Use ONLY the entity IDs listed above."""
 
 SYNTHESIS_PROMPT_TEMPLATE = """Produce a structured meeting analysis from this knowledge graph.
 
@@ -74,10 +88,55 @@ Return JSON matching this schema (no markdown fencing):
 Use ONLY information present in the knowledge graph. Every item must trace back to a graph node."""
 
 
-# --- Chunking ---
+# --- Chunking (Fix 7: Speaker-turn chunking) ---
 
 def chunk_transcript(text: str, chunk_size: int = 500, overlap: int = 100) -> list[dict]:
-    """Split transcript into overlapping chunks by word count. Returns list of {text, start, end}."""
+    """Split transcript into chunks. Uses speaker turns if detected, falls back to word count."""
+    turns = _split_by_speaker_turns(text)
+    if turns and len(turns) >= 3:
+        return _chunk_by_turns(turns, group_size=12)
+    # Fallback to word-count chunking
+    return _chunk_by_words(text, chunk_size, overlap)
+
+
+def _split_by_speaker_turns(text: str) -> list[dict]:
+    """Split transcript into individual speaker turns."""
+    turn_pattern = re.compile(
+        r"(?:^([A-Z][A-Za-z .'\-]+(?:\s+\([^)]+\))?)\s+\d{1,2}:\d{2}\s*$"  # Otter
+        r"|^([A-Z][A-Za-z .'\-]{0,40}):\s+"  # Generic "Name: text"
+        r")",
+        re.MULTILINE
+    )
+
+    turns = []
+    matches = list(turn_pattern.finditer(text))
+    for i, match in enumerate(matches):
+        speaker = match.group(1) or match.group(2) or "Unknown"
+        start = match.start()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        content = text[start:end].strip()
+        if content:
+            turns.append({"speaker": speaker.strip(), "text": content, "start": start, "end": end})
+
+    return turns
+
+
+def _chunk_by_turns(turns: list[dict], group_size: int = 12) -> list[dict]:
+    """Group speaker turns into chunks of ~group_size turns."""
+    chunks = []
+    for i in range(0, len(turns), group_size):
+        group = turns[i:i + group_size]
+        text = "\n\n".join(t["text"] for t in group)
+        chunks.append({
+            "text": text,
+            "start": group[0]["start"],
+            "end": group[-1]["end"],
+        })
+    return chunks
+
+
+def _chunk_by_words(text: str, chunk_size: int = 500, overlap: int = 100) -> list[dict]:
+    """Original word-count chunking as fallback."""
     words = text.split()
     if len(words) <= chunk_size:
         return [{"text": text, "start": 0, "end": len(text)}]
@@ -85,21 +144,101 @@ def chunk_transcript(text: str, chunk_size: int = 500, overlap: int = 100) -> li
     chunks = []
     word_start = 0
     char_pos = 0
-
     while word_start < len(words):
         word_end = min(word_start + chunk_size, len(words))
         chunk_text = " ".join(words[word_start:word_end])
-
-        # Approximate character positions
         start_char = text.find(words[word_start], char_pos) if word_start < len(words) else len(text)
         end_char = start_char + len(chunk_text)
-
         chunks.append({"text": chunk_text, "start": start_char, "end": end_char})
-
         char_pos = start_char
         word_start += chunk_size - overlap
-
     return chunks
+
+
+# --- Speaker Extraction (Fix 4) ---
+
+def _extract_speakers_from_transcript(raw_transcript: str) -> set[str]:
+    """Extract speaker names from transcript format without LLM.
+    Uses the same patterns as transcript_parser.py."""
+    speakers = set()
+
+    # Otter format: "Name  HH:MM"
+    for match in re.finditer(r"^([A-Za-z][A-Za-z .'\-]+)\s+\d{1,2}:\d{2}\s*$", raw_transcript, re.MULTILINE):
+        speakers.add(match.group(1).strip())
+
+    # VTT voice tags: "<v Speaker Name>"
+    for match in re.finditer(r"<v\s+([^>]+)>", raw_transcript):
+        speakers.add(match.group(1).strip())
+
+    # Zoom format: "Speaker Name: text" after timestamp lines
+    for match in re.finditer(r"^\d+\n[\d:.]+ --> [\d:.]+\n([^:]{1,40}):", raw_transcript, re.MULTILINE):
+        speakers.add(match.group(1).strip())
+
+    # Generic "Name: text" at line start (common in many formats)
+    for match in re.finditer(r"^([A-Z][A-Za-z .'\-]{1,40})\s*:\s+\S", raw_transcript, re.MULTILINE):
+        name = match.group(1).strip()
+        if len(name.split()) <= 5:  # Avoid matching long sentences
+            speakers.add(name)
+
+    return speakers
+
+
+# --- Source Quote Verification (Fix 2/9) ---
+
+def _verify_source_quotes(entities: list[dict], raw_transcript: str) -> list[dict]:
+    """Check each entity's source_quote exists in the transcript. Flag unverified ones."""
+    transcript_lower = raw_transcript.lower()
+    for e in entities:
+        quote = e.get("properties", {}).get("source_quote", "") or e.get("source_quote", "")
+        if quote:
+            # Store source_quote in properties for consistency
+            e.setdefault("properties", {})["source_quote"] = quote
+            # Check if quote (or close substring) exists in transcript
+            quote_lower = quote.lower().strip().strip('"').strip("'")
+            if len(quote_lower) > 10 and quote_lower in transcript_lower:
+                e["properties"]["quote_verified"] = True
+            else:
+                e["properties"]["quote_verified"] = False
+    return entities
+
+
+# --- Trust Flags (Fix 6) ---
+
+def _add_trust_flags(review_output: dict, raw_transcript: str, entities: list[dict]) -> dict:
+    """Add rule-based trust flags to the review output."""
+    flags = review_output.get("trust_flags", []) or []
+
+    # Count speakers
+    participants = review_output.get("meeting_metadata", {}).get("participants", [])
+    if len(participants) < 3:
+        flags.append("Small meeting with limited cross-validation")
+
+    # Short transcript
+    word_count = len(raw_transcript.split())
+    if word_count < 500:
+        flags.append("Short transcript — extraction may be less reliable")
+
+    # Low confidence items
+    low_confidence = sum(
+        1 for d in review_output.get("decisions", [])
+        if d.get("confidence") == "low"
+    ) + sum(
+        1 for a in review_output.get("action_items", [])
+        if a.get("confidence") == "low"
+    )
+    if low_confidence > 0:
+        flags.append(f"{low_confidence} item(s) have low confidence")
+
+    # Unverified quotes
+    unverified = sum(
+        1 for e in entities
+        if e.get("properties", {}).get("quote_verified") is False
+    )
+    if unverified > 0:
+        flags.append(f"{unverified} source quote(s) could not be verified against transcript")
+
+    review_output["trust_flags"] = flags
+    return review_output
 
 
 # --- Response Parsing ---
@@ -117,8 +256,21 @@ def assign_entity_ids(entities: list[dict]) -> list[dict]:
     return entities
 
 
+def parse_resolution_response(response: dict) -> dict:
+    """Parse resolution (Pass 2) response with duplicates, updates, corrections, and relationships."""
+    return {
+        "duplicates": response.get("duplicates", []),
+        "commitment_updates": response.get("commitment_updates", []),
+        "type_corrections": response.get("type_corrections", []),
+        "relationships": response.get("relationships", []),
+    }
+
+
 def parse_relationship_response(response: dict) -> list[dict]:
-    """Parse relationship extraction response."""
+    """Parse relationship extraction response. Supports both old and new resolution format."""
+    # New resolution format
+    if "relationships" in response and any(k in response for k in ("duplicates", "commitment_updates", "type_corrections")):
+        return response.get("relationships", [])
     return response.get("relationships", [])
 
 
@@ -141,6 +293,60 @@ def _format_entity_list(entities: list[dict]) -> str:
         prop_str = f" ({', '.join(f'{k}: {v}' for k, v in props.items())})" if props else ""
         lines.append(f"{e['short_id']}: [{e['type']}] {e['content']}{prop_str}")
     return "\n".join(lines)
+
+
+# --- Deduplication (Fix 1: Semantic dedup) ---
+
+def _deduplicate_entities(entities: list[dict]) -> list[dict]:
+    """Deduplicate entities using embedding similarity within each type."""
+    from embeddings import get_embedding_model
+    import numpy as np
+
+    # Group by type
+    by_type: dict[str, list[dict]] = {}
+    for e in entities:
+        by_type.setdefault(e["type"], []).append(e)
+
+    unique = []
+    model = get_embedding_model()
+
+    for etype, group in by_type.items():
+        if len(group) <= 1:
+            unique.extend(group)
+            continue
+
+        # For persons and topics, exact name match is fine (they're short)
+        if etype in ("person", "topic"):
+            seen = set()
+            for e in group:
+                key = e["content"].strip().lower()
+                if key not in seen:
+                    seen.add(key)
+                    unique.append(e)
+            continue
+
+        # For decisions, action_items, risks — use embedding similarity
+        contents = [e["content"] for e in group]
+        embeddings = model.encode(contents)
+
+        # Mark which indices are duplicates
+        merged = set()
+        for i in range(len(group)):
+            if i in merged:
+                continue
+            unique.append(group[i])
+            for j in range(i + 1, len(group)):
+                if j in merged:
+                    continue
+                sim = float(np.dot(embeddings[i], embeddings[j]) / (
+                    np.linalg.norm(embeddings[i]) * np.linalg.norm(embeddings[j]) + 1e-8
+                ))
+                if sim > 0.85:
+                    merged.add(j)
+                    logger.info("Merged duplicate entities: '%s' ~ '%s' (sim=%.3f)",
+                                group[i]["content"][:50], group[j]["content"][:50], sim)
+
+    return unique
 
 
 # --- Pipeline ---
@@ -167,6 +373,10 @@ def run_extraction_pipeline(
     # Clear any existing graph for this meeting (reindex case)
     kg.clear_meeting(meeting_id)
 
+    # Fix 4: Pre-extract speakers from transcript format (no LLM)
+    known_speakers = _extract_speakers_from_transcript(raw_transcript)
+    logger.info("Pre-extracted %d speakers from transcript format: %s", len(known_speakers), known_speakers)
+
     try:
         # --- Pass 1: Entity Extraction ---
         logger.info("Pass 1: Extracting entities from meeting %s", meeting_id)
@@ -191,9 +401,20 @@ def run_extraction_pipeline(
             logger.warning("Pass 1 produced zero entities, falling back to single-shot")
             return _fallback_single_shot(raw_transcript, provider)
 
-        # Deduplicate persons and topics
+        # Fix 2/9: Verify source quotes programmatically
+        all_entities = _verify_source_quotes(all_entities, raw_transcript)
+
+        # Fix 1: Semantic dedup
         all_entities = _deduplicate_entities(all_entities)
         all_entities = assign_entity_ids(all_entities)
+
+        # Fix 4: Mark person entities with was_present based on transcript speakers
+        known_speakers_lower = {s.lower() for s in known_speakers}
+        for e in all_entities:
+            if e["type"] == "person":
+                e.setdefault("properties", {})["was_present"] = (
+                    e["content"].strip().lower() in known_speakers_lower
+                )
 
         # Store entities in graph
         entity_id_map = {}  # short_id -> graph node_id
@@ -220,31 +441,86 @@ def run_extraction_pipeline(
             kg.add_transcript_chunk(meeting_id, i, chunk["text"],
                                     source_start=chunk["start"], source_end=chunk["end"])
 
-        # --- Pass 2: Relationship Extraction ---
-        logger.info("Pass 2: Extracting relationships for meeting %s", meeting_id)
+        # --- Pass 2: Structured Resolution (Fix 8) ---
+        logger.info("Pass 2: Resolution and relationships for meeting %s", meeting_id)
         valid_short_ids = {e["short_id"] for e in all_entities}
 
         # Batch entities into groups of ~30
         batch_size = 30
         all_edges: list[dict] = []
+        all_duplicates: list[dict] = []
+        all_commitment_updates: list[dict] = []
+        all_type_corrections: list[dict] = []
+
         for batch_start in range(0, len(all_entities), batch_size):
             batch = all_entities[batch_start:batch_start + batch_size]
             entity_list = _format_entity_list(batch)
 
-            # Use relevant transcript context for this batch
-            context = raw_transcript[:3000]  # First 3000 chars as context
+            # Fix 3: Use entity chunks, not hardcoded [:3000]
+            chunk_ranges = set()
+            for entity in batch:
+                cs = entity.get("chunk_start")
+                ce = entity.get("chunk_end")
+                if cs is not None and ce is not None:
+                    chunk_ranges.add((cs, ce))
 
-            prompt = RELATIONSHIP_PROMPT_TEMPLATE.format(
+            if chunk_ranges:
+                sorted_ranges = sorted(chunk_ranges)
+                context_parts = []
+                for start, end in sorted_ranges:
+                    context_parts.append(raw_transcript[start:end])
+                context = "\n...\n".join(context_parts)
+            else:
+                context = raw_transcript[:3000]  # fallback
+
+            prompt = RESOLUTION_PROMPT_TEMPLATE.format(
                 entity_list=entity_list, context=context
             )
             try:
-                response = generate(prompt, provider=provider, system_prompt=RELATIONSHIP_SYSTEM_PROMPT)
-                edges = parse_relationship_response(response)
+                response = generate(prompt, provider=provider, system_prompt=RESOLUTION_SYSTEM_PROMPT)
+                resolution = parse_resolution_response(response)
+
+                edges = resolution["relationships"]
                 edges = validate_edges(edges, valid_short_ids)
                 all_edges.extend(edges)
+
+                all_duplicates.extend(resolution["duplicates"])
+                all_commitment_updates.extend(resolution["commitment_updates"])
+                all_type_corrections.extend(resolution["type_corrections"])
             except Exception:
                 logger.exception("Pass 2 failed for entity batch starting at %d", batch_start)
                 continue
+
+        # Apply duplicate merges from Pass 2 (backup to embedding dedup)
+        ids_to_remove = set()
+        for dup in all_duplicates:
+            remove_id = dup.get("remove")
+            if remove_id and remove_id in valid_short_ids:
+                ids_to_remove.add(remove_id)
+                logger.info("Pass 2 flagged duplicate: remove %s, keep %s (%s)",
+                            remove_id, dup.get("keep"), dup.get("reason", ""))
+
+        if ids_to_remove:
+            all_entities = [e for e in all_entities if e["short_id"] not in ids_to_remove]
+            valid_short_ids -= ids_to_remove
+
+        # Apply commitment_type updates
+        entity_by_id = {e["short_id"]: e for e in all_entities}
+        for update in all_commitment_updates:
+            eid = update.get("entity_id")
+            if eid in entity_by_id:
+                entity_by_id[eid].setdefault("properties", {})["commitment_type"] = update["commitment_type"]
+
+        # Apply type corrections
+        for correction in all_type_corrections:
+            eid = correction.get("entity_id")
+            if eid in entity_by_id:
+                old_type = entity_by_id[eid]["type"]
+                new_type = correction.get("correct_type")
+                if new_type and new_type != old_type:
+                    logger.info("Pass 2 corrected type for %s: %s -> %s (%s)",
+                                eid, old_type, new_type, correction.get("reason", ""))
+                    entity_by_id[eid]["type"] = new_type
 
         # Store edges in graph
         for edge in all_edges:
@@ -265,6 +541,9 @@ def run_extraction_pipeline(
             logger.exception("Pass 3 failed, assembling minimal review from graph")
             review_output = _assemble_review_from_graph(subgraph)
 
+        # Fix 6: Add trust flags as post-processing
+        review_output = _add_trust_flags(review_output, raw_transcript, all_entities)
+
         logger.info("Pipeline complete for meeting %s: %d nodes, %d edges",
                      meeting_id, len(subgraph["nodes"]), len(subgraph["edges"]))
         return review_output
@@ -272,18 +551,6 @@ def run_extraction_pipeline(
     except Exception:
         logger.exception("Pipeline failed entirely for meeting %s, falling back to single-shot", meeting_id)
         return _fallback_single_shot(raw_transcript, provider)
-
-
-def _deduplicate_entities(entities: list[dict]) -> list[dict]:
-    """Deduplicate by type + normalized content."""
-    seen = set()
-    unique = []
-    for e in entities:
-        key = (e["type"], e["content"].strip().lower())
-        if key not in seen:
-            seen.add(key)
-            unique.append(e)
-    return unique
 
 
 def _fallback_single_shot(raw_transcript: str, provider: str = None) -> dict:

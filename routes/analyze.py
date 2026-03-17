@@ -79,30 +79,35 @@ def _generate_markdown(meeting: dict, verified: dict) -> str:
 
     if verified.get("decisions"):
         md.append("\n## Decisions\n")
-        md.append("| ID | Decision | Made By | Confidence |")
-        md.append("|-----|----------|---------|------------|")
         for d in verified["decisions"]:
-            md.append(f"| {d['id']} | {d['description']} | {d.get('made_by', 'N/A')} | {d.get('confidence', 'N/A')} |")
+            md.append(f"### {d['id']}: {d['description']}")
+            md.append(f"- **Made by:** {d.get('made_by', 'N/A')} | **Confidence:** {d.get('confidence', 'N/A')}")
             if d.get("source_quote"):
-                md.append(f"\n> {d['source_quote']}\n")
+                md.append(f'- **Source:** "{d["source_quote"]}"')
+            md.append("")
 
     if verified.get("action_items"):
         md.append("\n## Action Items\n")
-        md.append("| ID | Task | Owner | Deadline | Confidence |")
-        md.append("|-----|------|-------|----------|------------|")
         for a in verified["action_items"]:
-            md.append(f"| {a['id']} | {a['task']} | {a.get('owner', 'Unassigned')} | {a.get('deadline', 'N/A')} | {a.get('confidence', 'N/A')} |")
+            md.append(f"### {a['id']}: {a['task']}")
+            owner = a.get('owner', 'Unassigned')
+            deadline = a.get('deadline', 'N/A')
+            confidence = a.get('confidence', 'N/A')
+            md.append(f"- **Owner:** {owner} | **Deadline:** {deadline} | **Confidence:** {confidence}")
+            if a.get("commitment_type"):
+                md.append(f"- **Commitment:** {a['commitment_type']}")
             if a.get("source_quote"):
-                md.append(f"\n> {a['source_quote']}\n")
+                md.append(f'- **Source:** "{a["source_quote"]}"')
+            md.append("")
 
     if verified.get("open_risks"):
         md.append("\n## Open Risks\n")
-        md.append("| ID | Risk | Raised By | Severity |")
-        md.append("|-----|------|-----------|----------|")
         for r in verified["open_risks"]:
-            md.append(f"| {r['id']} | {r['description']} | {r.get('raised_by', 'N/A')} | {r.get('severity', 'N/A')} |")
+            md.append(f"### {r['id']}: {r['description']}")
+            md.append(f"- **Raised by:** {r.get('raised_by', 'N/A')} | **Severity:** {r.get('severity', 'N/A')}")
             if r.get("source_quote"):
-                md.append(f"\n> {r['source_quote']}\n")
+                md.append(f'- **Source:** "{r["source_quote"]}"')
+            md.append("")
 
     if verified.get("trust_flags"):
         md.append("\n## Trust Flags\n")
