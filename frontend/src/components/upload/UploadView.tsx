@@ -1,10 +1,11 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { Upload, FileText, AudioLines, Loader2, X, Sparkles, Zap, ArrowRight } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, type AiOutput } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
+import { Progress } from '@/components/ui/progress'
 import { cn } from '@/lib/utils'
 
 const TRANSCRIPT_EXTENSIONS = ['.vtt', '.txt', '.md', '.srt']
@@ -39,7 +40,17 @@ export function UploadView({ onAnalysisComplete, provider }: UploadViewProps) {
   const [pastedText, setPastedText] = useState('')
   const [status, setStatus] = useState<UploadStatus>('idle')
   const [isDragOver, setIsDragOver] = useState(false)
+  const [progressPercent, setProgressPercent] = useState(0)
+  const [progressMessage, setProgressMessage] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const eventSourceRef = useRef<EventSource | null>(null)
+
+  // Close EventSource on unmount
+  useEffect(() => {
+    return () => {
+      eventSourceRef.current?.close()
+    }
+  }, [])
 
   const handleFileDrop = useCallback((files: FileList | null) => {
     if (!files?.length) return
@@ -85,12 +96,38 @@ export function UploadView({ onAnalysisComplete, provider }: UploadViewProps) {
       }
 
       setStatus('analyzing')
+      setProgressPercent(10)
+      setProgressMessage('Starting analysis...')
+
+      // Connect to SSE for progress updates
+      const eventSource = new EventSource(`/api/analyze/${meetingId}/progress`)
+      eventSourceRef.current = eventSource
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data)
+          setProgressPercent(Math.round(data.progress * 100))
+          setProgressMessage(data.message)
+          if (data.stage === 'complete' || data.stage === 'error') {
+            eventSource.close()
+            eventSourceRef.current = null
+          }
+        } catch {}
+      }
+      eventSource.onerror = () => {
+        eventSource.close()
+        eventSourceRef.current = null
+      }
+
       const analysisResult = await api.analyze(meetingId, provider)
 
+      eventSourceRef.current?.close()
+      eventSourceRef.current = null
       setStatus('done')
       toast.success('Analysis complete')
       onAnalysisComplete(meetingId, analysisResult.ai_output)
     } catch (err) {
+      eventSourceRef.current?.close()
+      eventSourceRef.current = null
       setStatus('idle')
       toast.error(err instanceof Error ? err.message : 'Upload failed')
     }
@@ -263,6 +300,13 @@ export function UploadView({ onAnalysisComplete, provider }: UploadViewProps) {
           )}
         </Button>
       </div>
+
+      {status === 'analyzing' && (
+        <div className="space-y-3 py-4">
+          <Progress value={progressPercent} className="h-2" />
+          <p className="text-sm text-muted-foreground text-center">{progressMessage}</p>
+        </div>
+      )}
 
       {/* Feature highlights */}
       <div className="grid gap-4 pt-4 md:grid-cols-3">

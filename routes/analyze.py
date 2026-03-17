@@ -1,8 +1,11 @@
 import json
+import json as json_module
+import asyncio
 import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
 
 logger = logging.getLogger(__name__)
 
@@ -11,6 +14,24 @@ from database import get_meeting, update_ai_output, update_verified_output, reco
 from llm_client import analyze_transcript, get_available_providers
 
 router = APIRouter(prefix="/api", tags=["analyze"])
+
+# Module-level progress store
+_analysis_progress: dict[str, dict] = {}
+
+
+@router.get("/analyze/{meeting_id}/progress")
+async def analysis_progress(meeting_id: str):
+    """SSE endpoint for streaming analysis progress."""
+    async def event_stream():
+        while True:
+            progress = _analysis_progress.get(meeting_id)
+            if progress:
+                yield f"data: {json_module.dumps(progress)}\n\n"
+                if progress.get("stage") in ("complete", "error"):
+                    _analysis_progress.pop(meeting_id, None)
+                    break
+            await asyncio.sleep(0.3)
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @router.get("/providers")
@@ -37,9 +58,12 @@ async def analyze(request: Request):
 
     raw_transcript = meeting.get("raw_transcript", "")
 
+    def on_progress(stage, progress, message):
+        _analysis_progress[meeting_id] = {"stage": stage, "progress": progress, "message": message}
+
     try:
         from extraction_pipeline import run_extraction_pipeline
-        ai_output = run_extraction_pipeline(meeting_id, raw_transcript, provider=provider)
+        ai_output = run_extraction_pipeline(meeting_id, raw_transcript, provider=provider, progress_callback=on_progress)
     except Exception as e:
         logger.warning("Extraction pipeline failed, falling back to single-shot: %s", e)
         try:

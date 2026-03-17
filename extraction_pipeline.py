@@ -381,6 +381,7 @@ def run_extraction_pipeline(
     raw_transcript: str,
     provider: str = None,
     output_schema: str = None,
+    progress_callback: callable = None,
 ) -> dict:
     """Run the full 3-pass extraction pipeline.
 
@@ -404,6 +405,8 @@ def run_extraction_pipeline(
 
     try:
         # --- Pass 1: Entity Extraction ---
+        if progress_callback:
+            progress_callback("extracting_entities", 0.1, "Extracting entities from transcript...")
         logger.info("Pass 1: Extracting entities from meeting %s", meeting_id)
         chunks = chunk_transcript(raw_transcript)
         all_entities: list[dict] = []
@@ -424,6 +427,8 @@ def run_extraction_pipeline(
 
         if not all_entities:
             logger.warning("Pass 1 produced zero entities, falling back to single-shot")
+            if progress_callback:
+                progress_callback("fallback", 0.5, "Using fallback analysis...")
             return _fallback_single_shot(raw_transcript, provider)
 
         # Fix 2/9: Verify source quotes programmatically
@@ -467,6 +472,8 @@ def run_extraction_pipeline(
                                     source_start=chunk["start"], source_end=chunk["end"])
 
         # --- Pass 2: Structured Resolution (Fix 8) ---
+        if progress_callback:
+            progress_callback("building_relationships", 0.4, f"Building relationships between {len(all_entities)} entities...")
         logger.info("Pass 2: Resolution and relationships for meeting %s", meeting_id)
         valid_short_ids = {e["short_id"] for e in all_entities}
 
@@ -555,6 +562,8 @@ def run_extraction_pipeline(
                 kg.add_edge(src_graph_id, tgt_graph_id, edge["edge_type"], meeting_id)
 
         # --- Pass 3: Review Synthesis ---
+        if progress_callback:
+            progress_callback("synthesizing", 0.7, "Synthesizing meeting analysis...")
         logger.info("Pass 3: Synthesizing review for meeting %s", meeting_id)
         subgraph = kg.get_meeting_subgraph(meeting_id)
         graph_text = kg.serialize_subgraph_for_prompt(subgraph)
@@ -569,12 +578,16 @@ def run_extraction_pipeline(
         # Fix 6: Add trust flags as post-processing
         review_output = _add_trust_flags(review_output, raw_transcript, all_entities)
 
+        if progress_callback:
+            progress_callback("complete", 1.0, "Analysis complete")
         logger.info("Pipeline complete for meeting %s: %d nodes, %d edges",
                      meeting_id, len(subgraph["nodes"]), len(subgraph["edges"]))
         return review_output
 
     except Exception:
         logger.exception("Pipeline failed entirely for meeting %s, falling back to single-shot", meeting_id)
+        if progress_callback:
+            progress_callback("fallback", 0.5, "Using fallback analysis...")
         return _fallback_single_shot(raw_transcript, provider)
 
 
