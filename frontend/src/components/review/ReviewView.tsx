@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   Download,
   Loader2,
-  Sparkles,
   Quote,
   AlertCircle,
   ListChecks,
@@ -552,15 +551,6 @@ export function ReviewView({
           </div>
         </div>
       )}
-
-      {/* State of direction — compact */}
-      <div className="rounded-xl border border-border/50 bg-secondary/10 p-3">
-        <div className="flex items-center gap-2 mb-1">
-          <Sparkles className="size-3.5 text-primary" />
-          <span className="text-xs font-medium text-muted-foreground">Direction</span>
-        </div>
-        <p className="text-sm leading-relaxed text-foreground/90">{output.state_of_direction}</p>
-      </div>
 
       {/* === DECISIONS === */}
       {filteredDecisions.length > 0 && (
