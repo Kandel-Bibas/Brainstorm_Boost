@@ -54,12 +54,44 @@ class ChatSession:
         answer = result.get("answer", str(result))
         raw_sources = result.get("sources", [])
 
-        # Sources can come from both graph context and transcript context
+        # Build rich source objects from RAG context
         transcript_chunks = rag_context.get("transcript_context", [])
-        graph_context = rag_context.get("graph_context", "")
-        all_titles = {item.get("meeting_title", "") for item in transcript_chunks if item.get("meeting_title")}
-        # Also include any titles mentioned in graph context lines (best-effort)
-        sources = [s for s in raw_sources if s] if raw_sources else list(all_titles)
+
+        # Build a lookup of meeting titles → meeting info from transcript chunks
+        title_to_info: dict[str, dict] = {}
+        for item in transcript_chunks:
+            title = item.get("meeting_title", "")
+            if title and title not in title_to_info:
+                title_to_info[title] = {
+                    "meeting_id": item.get("meeting_id", ""),
+                    "meeting_title": title,
+                    "content": item.get("content", "")[:200],
+                    "item_type": item.get("item_type", "transcript"),
+                }
+
+        # Match LLM-returned source titles to actual meeting info
+        sources = []
+        seen_ids = set()
+        if raw_sources:
+            for s in raw_sources:
+                title = s if isinstance(s, str) else s.get("meeting_title", "") if isinstance(s, dict) else ""
+                info = title_to_info.get(title)
+                if info and info["meeting_id"] not in seen_ids:
+                    sources.append(info)
+                    seen_ids.add(info["meeting_id"])
+
+        # If LLM didn't return sources but we have RAG context, include those
+        if not sources and transcript_chunks:
+            for item in transcript_chunks[:3]:
+                mid = item.get("meeting_id", "")
+                if mid and mid not in seen_ids:
+                    sources.append({
+                        "meeting_id": mid,
+                        "meeting_title": item.get("meeting_title", ""),
+                        "content": item.get("content", "")[:200],
+                        "item_type": item.get("item_type", "transcript"),
+                    })
+                    seen_ids.add(mid)
 
         # 7. Save assistant message + sources to DB
         add_chat_message(

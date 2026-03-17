@@ -247,6 +247,7 @@ export function ReviewView({
   const deleteDecision = useCallback((idx: number) => {
     const item = output.decisions[idx]
     if (!item) return
+    if (!window.confirm(`Remove decision "${item.description.slice(0, 60)}..."? This can be undone.`)) return
     setDeletedItems(prev => new Map(prev).set(item.id, { type: 'decision', item, index: idx }))
     setOutput(prev => ({ ...prev, decisions: prev.decisions.filter((_, i) => i !== idx) }))
     toast(`Removed ${item.id}`, {
@@ -271,6 +272,7 @@ export function ReviewView({
   const deleteAction = useCallback((idx: number) => {
     const item = output.action_items[idx]
     if (!item) return
+    if (!window.confirm(`Remove action item "${item.task.slice(0, 60)}..."? This can be undone.`)) return
     setDeletedItems(prev => new Map(prev).set(item.id, { type: 'action_item', item, index: idx }))
     setOutput(prev => ({ ...prev, action_items: prev.action_items.filter((_, i) => i !== idx) }))
     toast(`Removed ${item.id}`, {
@@ -295,6 +297,7 @@ export function ReviewView({
   const deleteRisk = useCallback((idx: number) => {
     const item = output.open_risks[idx]
     if (!item) return
+    if (!window.confirm(`Remove risk "${item.description.slice(0, 60)}..."? This can be undone.`)) return
     setDeletedItems(prev => new Map(prev).set(item.id, { type: 'risk', item, index: idx }))
     setOutput(prev => ({ ...prev, open_risks: prev.open_risks.filter((_, i) => i !== idx) }))
     toast(`Removed ${item.id}`, {

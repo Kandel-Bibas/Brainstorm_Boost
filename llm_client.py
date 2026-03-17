@@ -9,10 +9,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-_anthropic_client = None
 _gemini_client = None
 
-ANTHROPIC_MODEL = "claude-sonnet-4-5-20250514"
 GEMINI_MODEL = "gemini-2.0-flash"
 OLLAMA_BASE_URL = "http://localhost:11434"
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b-instruct-q4_K_M")
@@ -148,8 +146,6 @@ def _check_ollama_available() -> bool:
 
 def get_available_providers() -> list[str]:
     providers = []
-    if os.getenv("ANTHROPIC_API_KEY"):
-        providers.append("anthropic")
     if os.getenv("GOOGLE_API_KEY"):
         providers.append("gemini")
     if _check_ollama_available():
@@ -157,31 +153,17 @@ def get_available_providers() -> list[str]:
     return providers
 
 
-def _get_anthropic_client():
-    global _anthropic_client
-    if _anthropic_client is None:
-        import anthropic
+def _get_gemini_client(system_prompt: str = SYSTEM_PROMPT):
+    import google.generativeai as genai
 
-        api_key = os.getenv("ANTHROPIC_API_KEY")
-        if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY environment variable is not set")
-        _anthropic_client = anthropic.Anthropic(api_key=api_key)
-    return _anthropic_client
-
-
-def _get_gemini_client():
-    global _gemini_client
-    if _gemini_client is None:
-        import google.generativeai as genai
-
-        api_key = os.getenv("GOOGLE_API_KEY")
-        if not api_key:
-            raise ValueError("GOOGLE_API_KEY environment variable is not set")
-        genai.configure(api_key=api_key)
-        _gemini_client = genai.GenerativeModel(
-            model_name=GEMINI_MODEL,
-            system_instruction=SYSTEM_PROMPT,
-        )
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise ValueError("GOOGLE_API_KEY environment variable is not set")
+    genai.configure(api_key=api_key)
+    return genai.GenerativeModel(
+        model_name=GEMINI_MODEL,
+        system_instruction=system_prompt,
+    )
     return _gemini_client
 
 
@@ -191,11 +173,27 @@ def _parse_json_response(text: str) -> dict:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
-    # Try stripping markdown fences
+    # Try stripping markdown fences (complete fences)
     m = RE_JSON_FENCE.search(text)
     if m:
         try:
             return json.loads(m.group(1))
+        except json.JSONDecodeError:
+            pass
+    # Try stripping opening fence without closing fence (truncated response)
+    stripped = re.sub(r"^```(?:json)?\s*\n?", "", text.strip())
+    stripped = re.sub(r"\n?\s*```\s*$", "", stripped)
+    if stripped != text.strip():
+        try:
+            return json.loads(stripped)
+        except json.JSONDecodeError:
+            pass
+    # Try finding the first { and last } (LLM added preamble/postamble text)
+    first_brace = text.find("{")
+    last_brace = text.rfind("}")
+    if first_brace != -1 and last_brace > first_brace:
+        try:
+            return json.loads(text[first_brace:last_brace + 1])
         except json.JSONDecodeError:
             pass
     raise ValueError(f"Could not parse JSON from LLM response: {text[:200]}...")
@@ -211,53 +209,10 @@ def _format_transcript_for_prompt(utterances: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def _analyze_with_anthropic(user_prompt: str, system_prompt: str = SYSTEM_PROMPT) -> dict:
-    import anthropic
-
-    client = _get_anthropic_client()
-
-    # First attempt
-    try:
-        response = client.messages.create(
-            model=ANTHROPIC_MODEL,
-            max_tokens=8192,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_prompt}],
-        )
-        text = response.content[0].text
-        return _parse_json_response(text)
-    except (json.JSONDecodeError, ValueError):
-        pass
-    except anthropic.AuthenticationError:
-        raise
-    except anthropic.RateLimitError:
-        raise
-    except anthropic.APIError:
-        raise
-
-    # Retry with stricter prompt
-    retry_prompt = (
-        user_prompt
-        + "\n\nIMPORTANT: Your previous response was not valid JSON. "
-        "Return ONLY the JSON object, no markdown fencing, no explanation text."
-    )
-    try:
-        response = client.messages.create(
-            model=ANTHROPIC_MODEL,
-            max_tokens=8192,
-            system=system_prompt,
-            messages=[{"role": "user", "content": retry_prompt}],
-        )
-        text = response.content[0].text
-        return _parse_json_response(text)
-    except (json.JSONDecodeError, ValueError) as e:
-        raise ValueError(f"Anthropic returned invalid JSON after retry: {e}")
-
-
 def _analyze_with_gemini(user_prompt: str, system_prompt: str = SYSTEM_PROMPT) -> dict:
     import google.generativeai as genai
 
-    model = _get_gemini_client()
+    model = _get_gemini_client(system_prompt=system_prompt)
 
     # First attempt
     try:
@@ -336,15 +291,13 @@ def analyze_transcript(utterances: list, provider: str = None) -> dict:
 
     if not provider:
         if not available:
-            raise ValueError("No LLM provider configured. Set ANTHROPIC_API_KEY or GOOGLE_API_KEY in .env")
+            raise ValueError("No LLM provider configured. Set GOOGLE_API_KEY in .env")
         provider = available[0]
 
     transcript_text = _format_transcript_for_prompt(utterances)
     user_prompt = USER_PROMPT_TEMPLATE.format(schema=OUTPUT_SCHEMA, transcript=transcript_text)
 
-    if provider == "anthropic":
-        return _analyze_with_anthropic(user_prompt)
-    elif provider == "gemini":
+    if provider == "gemini":
         return _analyze_with_gemini(user_prompt)
     elif provider == "ollama":
         return _analyze_with_ollama(user_prompt)
@@ -368,9 +321,7 @@ def generate(prompt: str, provider: str = None, system_prompt: str = None) -> di
 
     effective_system = system_prompt if system_prompt is not None else GENERAL_SYSTEM_PROMPT
 
-    if provider == "anthropic":
-        return _analyze_with_anthropic(prompt, system_prompt=effective_system)
-    elif provider == "gemini":
+    if provider == "gemini":
         return _analyze_with_gemini(prompt, system_prompt=effective_system)
     elif provider == "ollama":
         return _analyze_with_ollama(prompt, system_prompt=effective_system)
