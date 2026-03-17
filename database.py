@@ -472,6 +472,17 @@ def find_nodes_by_content(query: str, node_type: str | None = None, limit: int =
     return result
 
 
+def delete_meeting(meeting_id: str):
+    """Delete a meeting and all associated data (cascade)."""
+    with get_connection() as conn:
+        conn.execute("DELETE FROM graph_edges WHERE meeting_id = ?", (meeting_id,))
+        conn.execute("DELETE FROM graph_nodes WHERE meeting_id = ?", (meeting_id,))
+        conn.execute("DELETE FROM action_items WHERE meeting_id = ?", (meeting_id,))
+        conn.execute("DELETE FROM chat_messages WHERE context_meeting_id = ?", (meeting_id,))
+        conn.execute("DELETE FROM exports WHERE meeting_id = ?", (meeting_id,))
+        conn.execute("DELETE FROM meetings WHERE id = ?", (meeting_id,))
+
+
 def delete_meeting_graph(meeting_id: str):
     """Delete all graph nodes and edges for a meeting."""
     with get_connection() as conn:

@@ -1,9 +1,19 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { FileText, Loader2, Calendar, ChevronRight, Clock, Search } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { FileText, Loader2, Calendar, ChevronRight, Clock, Search, Trash2, AlertTriangle } from 'lucide-react'
+import { toast } from 'sonner'
 import { api } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 
 interface MeetingsViewProps {
@@ -50,6 +60,7 @@ function formatTime(iso: string): string {
 const STATUS_OPTIONS = ['all', 'uploaded', 'analyzed', 'approved'] as const
 
 export function MeetingsView({ onSelectMeeting }: MeetingsViewProps) {
+  const queryClient = useQueryClient()
   const { data: meetings, isLoading } = useQuery({
     queryKey: ['meetings'],
     queryFn: api.getMeetings,
@@ -57,6 +68,28 @@ export function MeetingsView({ onSelectMeeting }: MeetingsViewProps) {
 
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string; status: string } | null>(null)
+  const [deleting, setDeleting] = useState(false)
+
+  const handleDeleteClick = (e: React.MouseEvent, meeting: { id: string; title: string; status: string }) => {
+    e.stopPropagation()
+    setDeleteTarget(meeting)
+  }
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      await api.deleteMeeting(deleteTarget.id)
+      queryClient.invalidateQueries({ queryKey: ['meetings'] })
+      toast.success(`"${deleteTarget.title}" deleted`)
+      setDeleteTarget(null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete meeting')
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   const filteredMeetings = meetings?.filter((m) => {
     const matchesSearch = !search || m.title.toLowerCase().includes(search.toLowerCase())
@@ -187,6 +220,13 @@ export function MeetingsView({ onSelectMeeting }: MeetingsViewProps) {
                     </div>
                   </div>
                   <StatusBadge status={m.status} />
+                  <button
+                    onClick={(e) => handleDeleteClick(e, { id: m.id, title: m.title, status: m.status })}
+                    className="rounded-lg p-2 text-muted-foreground/50 transition-colors hover:bg-destructive/10 hover:text-destructive"
+                    title="Delete meeting"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
                   <ChevronRight className="size-5 text-muted-foreground" />
                 </button>
               ))}
@@ -194,6 +234,66 @@ export function MeetingsView({ onSelectMeeting }: MeetingsViewProps) {
           </CardContent>
         </Card>
       )}
+      {/* Delete confirmation dialog */}
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent className="glass border-border/50 sm:max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="flex size-10 items-center justify-center rounded-xl bg-destructive/10">
+                <AlertTriangle className="size-5 text-destructive" />
+              </div>
+              <div>
+                <DialogTitle>Delete Meeting</DialogTitle>
+                <DialogDescription className="mt-1">
+                  This action cannot be undone.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          {deleteTarget && (
+            <div className="space-y-3 py-2">
+              <p className="text-sm text-foreground">
+                Are you sure you want to delete <strong>"{deleteTarget.title}"</strong>?
+              </p>
+              <div className="space-y-2 rounded-lg bg-destructive/5 border border-destructive/20 p-3 text-xs text-destructive">
+                <p className="font-medium">This will permanently remove:</p>
+                <ul className="ml-4 list-disc space-y-1">
+                  <li>The meeting transcript and all analysis data</li>
+                  <li>All extracted decisions, action items, and risks</li>
+                  <li>Knowledge graph nodes and relationships</li>
+                  <li>Any exported files linked to this meeting</li>
+                  <li>This meeting's data from the knowledge base (ChromaDB)</li>
+                </ul>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setDeleteTarget(null)}
+              disabled={deleting}
+              className="rounded-xl border-border/50"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmDelete}
+              disabled={deleting}
+              className="gap-2 rounded-xl"
+            >
+              {deleting ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Trash2 className="size-4" />
+              )}
+              Delete Meeting
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
