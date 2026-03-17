@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { api, type AiOutput } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { cn } from '@/lib/utils'
 import { ReviewView } from '@/components/review/ReviewView'
 import { TranscriptPanel } from '@/components/meeting/TranscriptPanel'
 import { MeetingTimeline, type TimelineItem } from '@/components/meeting/MeetingTimeline'
@@ -14,6 +15,23 @@ interface MeetingDetailProps {
   onBack: () => void
   onPrepareFollowUp: (agenda: string, participants: string) => void
   provider?: string
+}
+
+function ExpandableText({ text, className }: { text: string; className?: string }) {
+  const [expanded, setExpanded] = useState(false)
+  return (
+    <p
+      onClick={() => setExpanded(!expanded)}
+      className={cn(
+        className,
+        expanded ? 'whitespace-normal' : 'truncate',
+        'cursor-pointer'
+      )}
+      title={expanded ? 'Click to collapse' : text}
+    >
+      {text}
+    </p>
+  )
 }
 
 export function MeetingDetail({ meetingId, onBack, onPrepareFollowUp }: MeetingDetailProps) {
@@ -259,7 +277,7 @@ export function MeetingDetail({ meetingId, onBack, onPrepareFollowUp }: MeetingD
               </div>
               <div className="min-w-0">
                 <p className="text-sm text-muted-foreground">Title</p>
-                <p className="text-lg font-semibold text-foreground truncate">{aiOutput.meeting_metadata.title}</p>
+                <ExpandableText text={aiOutput.meeting_metadata.title} className="text-lg font-semibold text-foreground" />
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -277,11 +295,12 @@ export function MeetingDetail({ meetingId, onBack, onPrepareFollowUp }: MeetingD
               </div>
               <div className="min-w-0">
                 <p className="text-sm text-muted-foreground">Participants</p>
-                <p className="text-base font-semibold text-foreground truncate">
-                  {aiOutput.meeting_metadata.participants.length > 0
+                <ExpandableText
+                  text={aiOutput.meeting_metadata.participants.length > 0
                     ? aiOutput.meeting_metadata.participants.join(', ')
                     : 'Unknown'}
-                </p>
+                  className="text-base font-semibold text-foreground"
+                />
               </div>
             </div>
             <div className="flex items-center gap-3">
