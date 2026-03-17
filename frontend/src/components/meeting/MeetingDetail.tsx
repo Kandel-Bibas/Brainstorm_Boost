@@ -282,7 +282,30 @@ export function MeetingDetail({ meetingId, onBack, onPrepareFollowUp }: MeetingD
                 aiOutput={aiOutput}
                 onApprove={handleApprove}
                 graphData={graphData}
-                onHighlightTranscript={setHighlightedRange}
+                onHighlightTranscript={(range) => {
+                  if (range && (range as any).searchText) {
+                    // Source quote click — search transcript for the text
+                    const searchText = (range as any).searchText as string
+                    if (transcript) {
+                      const lower = transcript.toLowerCase()
+                      // Try exact match first
+                      let idx = lower.indexOf(searchText.toLowerCase())
+                      if (idx === -1) {
+                        // Try first 5 words as a window
+                        const words = searchText.toLowerCase().split(/\s+/)
+                        if (words.length >= 5) {
+                          const window = words.slice(0, 5).join(' ')
+                          idx = lower.indexOf(window)
+                        }
+                      }
+                      if (idx !== -1) {
+                        setHighlightedRange({ start: idx, end: idx + searchText.length })
+                      }
+                    }
+                  } else {
+                    setHighlightedRange(range)
+                  }
+                }}
               />
             </div>
           </div>

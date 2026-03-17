@@ -148,7 +148,7 @@ function OptionalField({
 
 // --- Collapsible source quote with speaker attribution ---
 
-function SourceQuote({ quote, speaker }: { quote: string; speaker?: string }) {
+function SourceQuote({ quote, speaker, onQuoteClick }: { quote: string; speaker?: string; onQuoteClick?: () => void }) {
   const [open, setOpen] = useState(false)
 
   if (!quote) return null
@@ -164,7 +164,14 @@ function SourceQuote({ quote, speaker }: { quote: string; speaker?: string }) {
         {speaker ? `${speaker} said` : 'Source Quote'}
       </button>
       {open && (
-        <blockquote className="mt-2 border-l-2 border-primary/30 pl-3 text-xs text-muted-foreground break-words whitespace-pre-wrap">
+        <blockquote
+          onClick={onQuoteClick}
+          className={cn(
+            "mt-2 border-l-2 border-primary/30 pl-3 text-xs text-muted-foreground break-words whitespace-pre-wrap",
+            onQuoteClick && "cursor-pointer hover:border-primary hover:text-foreground hover:bg-primary/5 rounded-r-lg transition-colors"
+          )}
+          title={onQuoteClick ? "Click to find in transcript" : undefined}
+        >
           {speaker && (
             <span className="not-italic font-medium text-foreground/70">{speaker}: </span>
           )}
@@ -175,16 +182,44 @@ function SourceQuote({ quote, speaker }: { quote: string; speaker?: string }) {
   )
 }
 
+// --- Find quote in transcript and highlight ---
+
+function findQuoteInTranscript(quote: string, onHighlight?: (range: { start: number; end: number }) => void) {
+  // This is called by parent MeetingDetail which has the transcript text
+  // We pass the quote text up and let the parent search for it
+  if (onHighlight && quote) {
+    // The parent's onHighlightTranscript will handle searching
+    // We pass a special marker to signal "search for this text"
+    onHighlight({ start: -1, end: -1, searchText: quote } as any)
+  }
+}
+
 // --- Scroll to element and briefly highlight ---
 
-function scrollToAndHighlight(elementId: string) {
+function scrollToAndHighlight(
+  elementId: string,
+  nodeMap?: Map<string, any>,
+  onHighlightTranscript?: (range: any) => void,
+) {
   const el = document.getElementById(elementId)
-  if (!el) return
-  el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  el.classList.add('ring-2', 'ring-primary', 'ring-offset-2', 'ring-offset-background')
-  setTimeout(() => {
-    el.classList.remove('ring-2', 'ring-primary', 'ring-offset-2', 'ring-offset-background')
-  }, 2000)
+  if (el) {
+    // Found the element on the page — scroll to it and glow
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    el.classList.add('ring-2', 'ring-primary', 'ring-offset-2', 'ring-offset-background')
+    setTimeout(() => {
+      el.classList.remove('ring-2', 'ring-primary', 'ring-offset-2', 'ring-offset-background')
+    }, 2000)
+    return
+  }
+
+  // Element not on page (topic, person node) — try to highlight in transcript
+  if (nodeMap && onHighlightTranscript) {
+    const nodeId = elementId.replace('node-', '')
+    const node = nodeMap.get(nodeId)
+    if (node?.content) {
+      findQuoteInTranscript(node.content, onHighlightTranscript)
+    }
+  }
 }
 
 // --- Helper: find transcript position from graphData ---
@@ -599,7 +634,7 @@ export function ReviewView({
                           onChange={(v) => updateDecision(originalIdx, { made_by: v })}
                         />
                       </div>
-                      <SourceQuote quote={d.source_quote} speaker={d.source_quote_speaker} />
+                      <SourceQuote quote={d.source_quote} speaker={d.source_quote_speaker} onQuoteClick={() => findQuoteInTranscript(d.source_quote, onHighlightTranscript)} />
                       {d.confidence_rationale && (
                         <p className="text-xs text-muted-foreground/70 italic">{d.confidence_rationale}</p>
                       )}
@@ -608,7 +643,7 @@ export function ReviewView({
                           nodeId={nodeId}
                           edges={graphData.edges}
                           nodeMap={nodeMap}
-                          onChipClick={(targetId) => scrollToAndHighlight(`node-${targetId}`)}
+                          onChipClick={(targetId) => scrollToAndHighlight(`node-${targetId}`, nodeMap, onHighlightTranscript)}
                         />
                       )}
                     </div>
@@ -714,7 +749,7 @@ export function ReviewView({
                           Verified
                         </button>
                       </div>
-                      <SourceQuote quote={a.source_quote} speaker={a.source_quote_speaker} />
+                      <SourceQuote quote={a.source_quote} speaker={a.source_quote_speaker} onQuoteClick={() => findQuoteInTranscript(a.source_quote, onHighlightTranscript)} />
                       {a.confidence_rationale && (
                         <p className="text-xs text-muted-foreground/70 italic">{a.confidence_rationale}</p>
                       )}
@@ -723,7 +758,7 @@ export function ReviewView({
                           nodeId={nodeId}
                           edges={graphData.edges}
                           nodeMap={nodeMap}
-                          onChipClick={(targetId) => scrollToAndHighlight(`node-${targetId}`)}
+                          onChipClick={(targetId) => scrollToAndHighlight(`node-${targetId}`, nodeMap, onHighlightTranscript)}
                         />
                       )}
                     </div>
@@ -804,13 +839,13 @@ export function ReviewView({
                           onChange={(v) => updateRisk(originalIdx, { raised_by: v })}
                         />
                       </div>
-                      <SourceQuote quote={r.source_quote} speaker={r.source_quote_speaker} />
+                      <SourceQuote quote={r.source_quote} speaker={r.source_quote_speaker} onQuoteClick={() => findQuoteInTranscript(r.source_quote, onHighlightTranscript)} />
                       {graphData && (
                         <ConnectionChips
                           nodeId={nodeId}
                           edges={graphData.edges}
                           nodeMap={nodeMap}
-                          onChipClick={(targetId) => scrollToAndHighlight(`node-${targetId}`)}
+                          onChipClick={(targetId) => scrollToAndHighlight(`node-${targetId}`, nodeMap, onHighlightTranscript)}
                         />
                       )}
                     </div>
