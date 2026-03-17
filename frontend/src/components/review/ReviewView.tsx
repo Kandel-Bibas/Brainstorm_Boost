@@ -209,6 +209,7 @@ export function ReviewView({
   const [exportLinks, setExportLinks] = useState<{ md?: string; json?: string }>({})
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
   const [confidenceFilter, setConfidenceFilter] = useState<ConfidenceFilter>('all')
+  const [showUnverifiedOnly, setShowUnverifiedOnly] = useState(false)
 
   // Undo support (deletedItems tracked for restore callbacks in toast)
   const [, setDeletedItems] = useState<Map<string, { type: string; item: any; index: number }>>(new Map())
@@ -357,9 +358,18 @@ export function ReviewView({
   }
 
   // Filtered items
-  const filteredDecisions = output.decisions.filter(d => passesFilter(d.confidence, confidenceFilter))
-  const filteredActions = output.action_items.filter(a => passesFilter(a.confidence, confidenceFilter))
-  const filteredRisks = output.open_risks.filter(r => passesFilter(r.severity, confidenceFilter))
+  const filteredDecisions = output.decisions.filter(d =>
+    passesFilter(d.confidence, confidenceFilter) &&
+    (!showUnverifiedOnly || !d.source_quote)
+  )
+  const filteredActions = output.action_items.filter(a =>
+    passesFilter(a.confidence, confidenceFilter) &&
+    (!showUnverifiedOnly || !a.source_quote)
+  )
+  const filteredRisks = output.open_risks.filter(r =>
+    passesFilter(r.severity, confidenceFilter) &&
+    (!showUnverifiedOnly || !r.source_quote)
+  )
 
   return (
     <div className="space-y-4 p-4">
@@ -432,10 +442,42 @@ export function ReviewView({
       {output.trust_flags.length > 0 && (
         <div className="flex items-start gap-3 rounded-xl border border-chart-4/30 bg-chart-4/5 p-3">
           <AlertTriangle className="size-4 shrink-0 text-chart-4 mt-0.5" />
-          <div className="space-y-0.5">
-            {output.trust_flags.map((flag, i) => (
-              <p key={i} className="text-xs text-chart-4/90">{flag}</p>
-            ))}
+          <div className="space-y-1">
+            {output.trust_flags.map((flag, i) => {
+              const isQuoteFlag = flag.includes('source quote')
+              const isConfidenceFlag = flag.includes('low confidence')
+              const isActive =
+                (isQuoteFlag && showUnverifiedOnly) ||
+                (isConfidenceFlag && confidenceFilter === 'medium+')
+
+              if (isQuoteFlag || isConfidenceFlag) {
+                return (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      if (isQuoteFlag) {
+                        setShowUnverifiedOnly((prev) => !prev)
+                      } else if (isConfidenceFlag) {
+                        setConfidenceFilter((prev) => prev === 'medium+' ? 'all' : 'medium+')
+                      }
+                    }}
+                    className={cn(
+                      'block text-left text-xs transition-all',
+                      isActive
+                        ? 'text-chart-4 underline font-medium'
+                        : 'text-chart-4/90 underline decoration-dashed hover:text-chart-4'
+                    )}
+                    title={isActive ? 'Click to clear filter' : 'Click to filter'}
+                  >
+                    {flag} {isActive ? '(active)' : ''}
+                  </button>
+                )
+              }
+
+              return (
+                <p key={i} className="text-xs text-chart-4/90">{flag}</p>
+              )
+            })}
           </div>
         </div>
       )}
