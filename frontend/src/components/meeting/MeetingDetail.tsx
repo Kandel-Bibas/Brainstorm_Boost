@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { ChevronRight, Home, Loader2, MessageCircle, BookOpen, Download, AlertCircle, Database, DatabaseZap, GitMerge } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, type AiOutput } from '@/lib/api'
@@ -11,12 +12,12 @@ import { MeetingTimeline, type TimelineItem } from '@/components/meeting/Meeting
 interface MeetingDetailProps {
   meetingId: string
   onBack: () => void
-  onOpenChat: (meetingId: string) => void
   onPrepareFollowUp: (agenda: string, participants: string) => void
   provider?: string
 }
 
-export function MeetingDetail({ meetingId, onBack, onOpenChat, onPrepareFollowUp }: MeetingDetailProps) {
+export function MeetingDetail({ meetingId, onBack, onPrepareFollowUp }: MeetingDetailProps) {
+  const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [meetingTitle, setMeetingTitle] = useState('')
@@ -305,7 +306,7 @@ export function MeetingDetail({ meetingId, onBack, onOpenChat, onPrepareFollowUp
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => onOpenChat(meetingId)}
+                  onClick={() => navigate(`/chat?meeting=${meetingId}`)}
                   className="gap-2 rounded-xl border-border/50"
                 >
                   <MessageCircle className="size-4" />

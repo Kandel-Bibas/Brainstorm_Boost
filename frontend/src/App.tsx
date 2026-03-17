@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect } from 'react'
-import { Routes, Route, useNavigate, useLocation } from 'react-router-dom'
+import { useState, useCallback } from 'react'
+import { Routes, Route, useNavigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
 import { Toaster } from 'sonner'
@@ -10,8 +10,7 @@ import { MeetingsView } from '@/components/meetings/MeetingsView'
 import { LiveView } from '@/components/live/LiveView'
 import { JoinView } from '@/components/live/JoinView'
 import { UploadModal } from '@/components/upload/UploadModal'
-import { ChatPanel } from '@/components/chat/ChatPanel'
-import { ChatButton } from '@/components/chat/ChatButton'
+import { ChatPage } from '@/components/chat/ChatPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -22,8 +21,7 @@ const queryClient = new QueryClient({
   },
 })
 
-function MeetingDetailRoute({ onOpenChat, onPrepareFollowUp, provider }: {
-  onOpenChat: (id: string) => void
+function MeetingDetailRoute({ onPrepareFollowUp, provider }: {
   onPrepareFollowUp: (agenda: string, participants: string) => void
   provider?: string
 }) {
@@ -34,7 +32,6 @@ function MeetingDetailRoute({ onOpenChat, onPrepareFollowUp, provider }: {
     <MeetingDetail
       meetingId={meetingId}
       onBack={() => navigate('/')}
-      onOpenChat={onOpenChat}
       onPrepareFollowUp={onPrepareFollowUp}
       provider={provider}
     />
@@ -43,24 +40,11 @@ function MeetingDetailRoute({ onOpenChat, onPrepareFollowUp, provider }: {
 
 function AppInner() {
   const navigate = useNavigate()
-  const location = useLocation()
 
-  const [chatOpen, setChatOpen] = useState(false)
-  const [chatContextMeetingId, setChatContextMeetingId] = useState<string | null>(null)
   const [uploadModalOpen, setUploadModalOpen] = useState(false)
   const [prepAgendaPreFill, setPrepAgendaPreFill] = useState('')
   const [prepParticipantsPreFill, setPrepParticipantsPreFill] = useState('')
   const [provider, setProvider] = useState<string | undefined>(undefined)
-
-  // Update chat context based on current route
-  useEffect(() => {
-    const match = location.pathname.match(/^\/meeting\/(.+)$/)
-    if (match) {
-      setChatContextMeetingId(match[1])
-    } else {
-      setChatContextMeetingId(null)
-    }
-  }, [location.pathname])
 
   const handlePrepareFollowUp = useCallback((agenda: string, participants: string) => {
     setPrepAgendaPreFill(agenda)
@@ -79,8 +63,6 @@ function AppInner() {
       {/* Content */}
       <div className="relative z-10">
         <Header
-          onChatToggle={() => setChatOpen(!chatOpen)}
-          chatOpen={chatOpen}
           provider={provider}
           onProviderChange={setProvider}
         />
@@ -100,7 +82,6 @@ function AppInner() {
               } />
               <Route path="/meeting/:meetingId" element={
                 <MeetingDetailRoute
-                  onOpenChat={(id) => { setChatContextMeetingId(id); setChatOpen(true) }}
                   onPrepareFollowUp={handlePrepareFollowUp}
                   provider={provider}
                 />
@@ -112,23 +93,11 @@ function AppInner() {
                 <MeetingsView onSelectMeeting={(id) => navigate(`/meeting/${id}`)} />
               } />
               <Route path="/join" element={<JoinView />} />
+              <Route path="/chat" element={<ChatPage provider={provider} />} />
             </Routes>
           </div>
         </main>
       </div>
-
-      {/* Chat */}
-      <ChatButton onClick={() => setChatOpen(!chatOpen)} isOpen={chatOpen} />
-      <ChatPanel
-        isOpen={chatOpen}
-        onClose={() => setChatOpen(false)}
-        contextMeetingId={chatContextMeetingId}
-        onNavigateToMeeting={(id) => {
-          setChatOpen(false)
-          navigate(`/meeting/${id}`)
-        }}
-        provider={provider}
-      />
 
       {/* Upload Modal */}
       <UploadModal

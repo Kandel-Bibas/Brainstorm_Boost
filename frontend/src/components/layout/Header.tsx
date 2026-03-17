@@ -13,8 +13,6 @@ import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 interface HeaderProps {
-  onChatToggle: () => void
-  chatOpen: boolean
   provider?: string
   onProviderChange: (provider: string) => void
 }
@@ -23,9 +21,10 @@ const tabs: { path: string; label: string; icon: typeof Home }[] = [
   { path: '/', label: 'Home', icon: Home },
   { path: '/live', label: 'Live', icon: Radio },
   { path: '/history', label: 'History', icon: History },
+  { path: '/chat', label: 'Chat', icon: MessageCircle },
 ]
 
-export function Header({ onChatToggle, chatOpen, provider, onProviderChange }: HeaderProps) {
+export function Header({ provider, onProviderChange }: HeaderProps) {
   const navigate = useNavigate()
   const location = useLocation()
   const currentPath = location.pathname
@@ -102,20 +101,6 @@ export function Header({ onChatToggle, chatOpen, provider, onProviderChange }: H
             </div>
           )}
 
-          {/* Chat button */}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onChatToggle}
-            className={cn(
-              'rounded-xl transition-all duration-200',
-              chatOpen
-                ? 'bg-primary/10 text-primary ring-1 ring-primary/20'
-                : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
-            )}
-          >
-            <MessageCircle className="size-5" />
-          </Button>
         </div>
       </div>
     </header>
