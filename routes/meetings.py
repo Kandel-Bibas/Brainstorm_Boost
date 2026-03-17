@@ -16,3 +16,14 @@ def meeting_detail(meeting_id: str):
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
     return meeting
+
+
+@router.get("/meetings/{meeting_id}/transcript")
+def meeting_transcript(meeting_id: str):
+    meeting = get_meeting(meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    return {
+        "meeting_id": meeting_id,
+        "transcript": meeting.get("raw_transcript", ""),
+    }

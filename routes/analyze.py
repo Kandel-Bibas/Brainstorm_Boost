@@ -62,6 +62,15 @@ async def analyze(request: Request):
 
     update_ai_output(meeting_id, ai_output)
 
+    # Auto-update meeting title from AI-inferred title
+    try:
+        inferred_title = ai_output.get("meeting_metadata", {}).get("title")
+        if inferred_title and inferred_title.strip():
+            from database import update_meeting_title
+            update_meeting_title(meeting_id, inferred_title.strip())
+    except Exception:
+        logger.exception("Failed to update meeting title for %s", meeting_id)
+
     return {"meeting_id": meeting_id, "status": "analyzed", "ai_output": ai_output}
 
 

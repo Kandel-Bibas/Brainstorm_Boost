@@ -97,6 +97,12 @@ export const api = {
     return res.json();
   },
 
+  async getMeetingTranscript(meetingId: string) {
+    const res = await fetch(`${BASE}/api/meetings/${meetingId}/transcript`);
+    if (!res.ok) throw new Error((await res.json()).detail);
+    return res.json() as Promise<{ meeting_id: string; transcript: string }>;
+  },
+
   async queryMemory(question: string, provider?: string) {
     const res = await fetch(`${BASE}/api/query`, {
       method: 'POST',

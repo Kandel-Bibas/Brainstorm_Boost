@@ -140,6 +140,11 @@ def update_ai_output(meeting_id: str, ai_output: dict):
         )
 
 
+def update_meeting_title(meeting_id: str, title: str):
+    with get_connection() as conn:
+        conn.execute("UPDATE meetings SET title = ? WHERE id = ?", (title, meeting_id))
+
+
 def update_verified_output(meeting_id: str, verified_output: dict):
     with get_connection() as conn:
         conn.execute(

@@ -193,16 +193,27 @@ def _verify_source_quotes(entities: list[dict], raw_transcript: str) -> list[dic
     transcript_lower = raw_transcript.lower()
     for e in entities:
         quote = e.get("properties", {}).get("source_quote", "") or e.get("source_quote", "")
-        speaker = e.get("source_quote_speaker", "") or e.get("properties", {}).get("source_quote_speaker", "")
         if quote:
-            # Store source_quote in properties for consistency
             e.setdefault("properties", {})["source_quote"] = quote
-            # Check if quote exists in transcript
             quote_lower = quote.lower().strip().strip('"').strip("'")
-            if len(quote_lower) > 10 and quote_lower in transcript_lower:
-                e["properties"]["quote_verified"] = True
+            if len(quote_lower) > 10:
+                verified = False
+                # Exact match first
+                if quote_lower in transcript_lower:
+                    verified = True
+                else:
+                    # Fuzzy: check if any 5-word window exists in transcript
+                    words = quote_lower.split()
+                    if len(words) >= 5:
+                        for i in range(len(words) - 4):
+                            window = " ".join(words[i:i+5])
+                            if window in transcript_lower:
+                                verified = True
+                                break
+                e["properties"]["quote_verified"] = verified
             else:
                 e["properties"]["quote_verified"] = False
+        speaker = e.get("source_quote_speaker", "") or e.get("properties", {}).get("source_quote_speaker", "")
         if speaker:
             e.setdefault("properties", {})["source_quote_speaker"] = speaker
     return entities
@@ -303,6 +314,13 @@ def _format_entity_list(entities: list[dict]) -> str:
 
 # --- Deduplication (Fix 1: Semantic dedup) ---
 
+DEDUP_THRESHOLDS = {
+    "decision": 0.75,
+    "action_item": 0.80,
+    "risk": 0.80,
+}
+
+
 def _deduplicate_entities(entities: list[dict]) -> list[dict]:
     """Deduplicate entities using embedding similarity within each type."""
     from embeddings import get_embedding_model
@@ -347,7 +365,8 @@ def _deduplicate_entities(entities: list[dict]) -> list[dict]:
                 sim = float(np.dot(embeddings[i], embeddings[j]) / (
                     np.linalg.norm(embeddings[i]) * np.linalg.norm(embeddings[j]) + 1e-8
                 ))
-                if sim > 0.85:
+                threshold = DEDUP_THRESHOLDS.get(etype, 0.80)
+                if sim > threshold:
                     merged.add(j)
                     logger.info("Merged duplicate entities: '%s' ~ '%s' (sim=%.3f)",
                                 group[i]["content"][:50], group[j]["content"][:50], sim)
