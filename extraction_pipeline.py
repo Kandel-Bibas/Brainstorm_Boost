@@ -27,19 +27,22 @@ TRANSCRIPT SEGMENT:
 Entity types to extract:
 - person: participant names
 - topic: subjects being discussed
-- decision: things that were decided (explicit or emergent)
+- decision: things that were decided (explicit or emergent). Include WHO made/formulated the decision.
 - action_item: tasks someone committed to do (include owner, deadline if mentioned)
 - risk: concerns, blockers, potential problems raised
 
-For each decision, action_item, and risk, include a source_quote field with the EXACT words from the transcript that support this entity. Copy the words verbatim — do not paraphrase.
+For each decision, action_item, and risk:
+1. Include a source_quote with the EXACT words from the transcript. Copy verbatim — do not paraphrase.
+2. Include the speaker name (who said it) in the source_quote_speaker field.
+3. For decisions, always include made_by (who formulated/announced the decision).
 
 Return JSON (no markdown fencing):
 {{"entities": [
   {{"type": "person", "content": "name"}},
   {{"type": "topic", "content": "topic description"}},
-  {{"type": "decision", "content": "what was decided", "properties": {{"confidence": "high|medium|low"}}, "source_quote": "exact words from the transcript"}},
-  {{"type": "action_item", "content": "task description", "properties": {{"owner": "name", "deadline": "when", "confidence": "high|medium|low"}}, "source_quote": "exact words from the transcript"}},
-  {{"type": "risk", "content": "concern description", "properties": {{"severity": "high|medium|low", "raised_by": "name"}}, "source_quote": "exact words from the transcript"}}
+  {{"type": "decision", "content": "what was decided", "properties": {{"confidence": "high|medium|low", "made_by": "person who made the decision", "decision_type": "explicit|emergent"}}, "source_quote": "exact words from transcript", "source_quote_speaker": "who said it"}},
+  {{"type": "action_item", "content": "task description", "properties": {{"owner": "name", "deadline": "when", "confidence": "high|medium|low"}}, "source_quote": "exact words from transcript", "source_quote_speaker": "who said it"}},
+  {{"type": "risk", "content": "concern description", "properties": {{"severity": "high|medium|low", "raised_by": "name"}}, "source_quote": "exact words from transcript", "source_quote_speaker": "who said it"}}
 ]}}"""
 
 RESOLUTION_PROMPT_TEMPLATE = """You are reviewing and enriching entities extracted from a meeting transcript.
@@ -190,15 +193,18 @@ def _verify_source_quotes(entities: list[dict], raw_transcript: str) -> list[dic
     transcript_lower = raw_transcript.lower()
     for e in entities:
         quote = e.get("properties", {}).get("source_quote", "") or e.get("source_quote", "")
+        speaker = e.get("source_quote_speaker", "") or e.get("properties", {}).get("source_quote_speaker", "")
         if quote:
             # Store source_quote in properties for consistency
             e.setdefault("properties", {})["source_quote"] = quote
-            # Check if quote (or close substring) exists in transcript
+            # Check if quote exists in transcript
             quote_lower = quote.lower().strip().strip('"').strip("'")
             if len(quote_lower) > 10 and quote_lower in transcript_lower:
                 e["properties"]["quote_verified"] = True
             else:
                 e["properties"]["quote_verified"] = False
+        if speaker:
+            e.setdefault("properties", {})["source_quote_speaker"] = speaker
     return entities
 
 

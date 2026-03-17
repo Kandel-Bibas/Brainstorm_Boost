@@ -98,9 +98,9 @@ function EditableCell({
   )
 }
 
-// --- Collapsible source quote ---
+// --- Collapsible source quote with speaker attribution ---
 
-function SourceQuote({ quote }: { quote: string }) {
+function SourceQuote({ quote, speaker }: { quote: string; speaker?: string }) {
   const [open, setOpen] = useState(false)
 
   if (!quote) return null
@@ -113,15 +113,30 @@ function SourceQuote({ quote }: { quote: string }) {
       >
         {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
         <Quote className="size-3" />
-        Verbatim
+        {speaker ? `${speaker} said` : 'Verbatim'}
       </button>
       {open && (
-        <blockquote className="mt-2 border-l-2 border-primary/30 pl-3 text-xs italic text-muted-foreground break-words whitespace-pre-wrap">
-          {quote}
+        <blockquote className="mt-2 border-l-2 border-primary/30 pl-3 text-xs text-muted-foreground break-words whitespace-pre-wrap">
+          {speaker && (
+            <span className="not-italic font-medium text-foreground/70">{speaker}: </span>
+          )}
+          <span className="italic">"{quote}"</span>
         </blockquote>
       )}
     </div>
   )
+}
+
+// --- Scroll to element and briefly highlight ---
+
+function scrollToAndHighlight(elementId: string) {
+  const el = document.getElementById(elementId)
+  if (!el) return
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  el.classList.add('ring-2', 'ring-primary', 'ring-offset-2', 'ring-offset-background')
+  setTimeout(() => {
+    el.classList.remove('ring-2', 'ring-primary', 'ring-offset-2', 'ring-offset-background')
+  }, 2000)
 }
 
 export function ReviewView({ meetingId, aiOutput: initialOutput, onApprove, graphData }: ReviewViewProps) {
@@ -347,7 +362,7 @@ export function ReviewView({ meetingId, aiOutput: initialOutput, onApprove, grap
               {output.decisions.map((d, idx) => {
                 const nodeId = `${meetingId}:decision:${idx + 1}`
                 return (
-                  <div key={d.id} className="rounded-xl border border-border/50 bg-secondary/20 p-4 space-y-3">
+                  <div key={d.id} id={`node-${nodeId}`} className="rounded-xl border border-border/50 bg-secondary/20 p-4 space-y-3 transition-all duration-500">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-mono text-xs text-muted-foreground">{d.id}</span>
                       <Badge variant="secondary" className="bg-secondary/50 text-xs">
@@ -370,12 +385,13 @@ export function ReviewView({ meetingId, aiOutput: initialOutput, onApprove, grap
                         />
                       </span>
                     </div>
-                    <SourceQuote quote={d.source_quote} />
+                    <SourceQuote quote={d.source_quote} speaker={d.source_quote_speaker} />
                     {graphData && (
                       <ConnectionChips
                         nodeId={nodeId}
                         edges={graphData.edges}
                         nodeMap={nodeMap}
+                        onChipClick={(targetId) => scrollToAndHighlight(`node-${targetId}`)}
                       />
                     )}
                   </div>
@@ -410,7 +426,7 @@ export function ReviewView({ meetingId, aiOutput: initialOutput, onApprove, grap
               {output.action_items.map((a, idx) => {
                 const nodeId = `${meetingId}:action_item:${idx + 1}`
                 return (
-                  <div key={a.id} className="rounded-xl border border-border/50 bg-secondary/20 p-4 space-y-3">
+                  <div key={a.id} id={`node-${nodeId}`} className="rounded-xl border border-border/50 bg-secondary/20 p-4 space-y-3 transition-all duration-500">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-mono text-xs text-muted-foreground">{a.id}</span>
                       <LevelBadge level={a.confidence} />
@@ -449,12 +465,13 @@ export function ReviewView({ meetingId, aiOutput: initialOutput, onApprove, grap
                         />
                       </span>
                     </div>
-                    <SourceQuote quote={a.source_quote} />
+                    <SourceQuote quote={a.source_quote} speaker={a.source_quote_speaker} />
                     {graphData && (
                       <ConnectionChips
                         nodeId={nodeId}
                         edges={graphData.edges}
                         nodeMap={nodeMap}
+                        onChipClick={(targetId) => scrollToAndHighlight(`node-${targetId}`)}
                       />
                     )}
                   </div>
@@ -489,7 +506,7 @@ export function ReviewView({ meetingId, aiOutput: initialOutput, onApprove, grap
               {output.open_risks.map((r, idx) => {
                 const nodeId = `${meetingId}:risk:${idx + 1}`
                 return (
-                  <div key={r.id} className="rounded-xl border border-border/50 bg-secondary/20 p-4 space-y-3">
+                  <div key={r.id} id={`node-${nodeId}`} className="rounded-xl border border-border/50 bg-secondary/20 p-4 space-y-3 transition-all duration-500">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-mono text-xs text-muted-foreground">{r.id}</span>
                       <LevelBadge level={r.severity} />
@@ -509,12 +526,13 @@ export function ReviewView({ meetingId, aiOutput: initialOutput, onApprove, grap
                         />
                       </span>
                     </div>
-                    <SourceQuote quote={r.source_quote} />
+                    <SourceQuote quote={r.source_quote} speaker={r.source_quote_speaker} />
                     {graphData && (
                       <ConnectionChips
                         nodeId={nodeId}
                         edges={graphData.edges}
                         nodeMap={nodeMap}
+                        onChipClick={(targetId) => scrollToAndHighlight(`node-${targetId}`)}
                       />
                     )}
                   </div>

@@ -9,13 +9,25 @@ router = APIRouter(prefix="/api", tags=["graph"])
 logger = logging.getLogger(__name__)
 
 
+INTERNAL_PROPERTIES = {"quote_verified", "chunk_start", "chunk_end", "source_quote"}
+
+
+def _clean_graph_for_api(graph: dict) -> dict:
+    """Strip internal metadata properties from graph nodes before sending to frontend."""
+    for node in graph.get("nodes", []):
+        props = node.get("properties", {})
+        for key in INTERNAL_PROPERTIES:
+            props.pop(key, None)
+    return graph
+
+
 @router.get("/meetings/{meeting_id}/graph")
 async def meeting_graph(meeting_id: str):
     meeting = get_meeting(meeting_id)
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
     graph = get_meeting_graph(meeting_id)
-    return graph
+    return _clean_graph_for_api(graph)
 
 
 @router.post("/meetings/{meeting_id}/reindex")

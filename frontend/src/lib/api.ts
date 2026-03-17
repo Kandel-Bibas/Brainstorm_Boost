@@ -22,6 +22,7 @@ export interface AiOutput {
     confidence: 'high' | 'medium' | 'low';
     confidence_rationale: string;
     source_quote: string;
+    source_quote_speaker?: string;
   }>;
   action_items: Array<{
     id: string;
@@ -32,6 +33,7 @@ export interface AiOutput {
     confidence: 'high' | 'medium' | 'low';
     confidence_rationale: string;
     source_quote: string;
+    source_quote_speaker?: string;
     verified?: boolean;
   }>;
   open_risks: Array<{
@@ -40,6 +42,7 @@ export interface AiOutput {
     raised_by: string;
     severity: 'high' | 'medium' | 'low';
     source_quote: string;
+    source_quote_speaker?: string;
   }>;
   state_of_direction: string;
   trust_flags: string[];
