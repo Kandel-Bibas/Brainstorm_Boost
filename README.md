@@ -5,7 +5,7 @@ AI-powered meeting intelligence: transcript in, structured decisions/actions/ris
 ## Prerequisites
 
 - Python 3.11+
-- An [Anthropic API key](https://console.anthropic.com/)
+- A [Google AI API key](https://aistudio.google.com/apikey) (for Gemini)
 
 ## Setup
 
@@ -15,7 +15,7 @@ python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-# Edit .env and add your real ANTHROPIC_API_KEY
+# Edit .env and add your GOOGLE_API_KEY
 ```
 
 ## Run
@@ -36,7 +36,7 @@ Open http://localhost:8000
 ## What It Does
 
 1. **Upload** a meeting transcript (file or pasted text)
-2. **AI Analysis** — Claude extracts decisions, action items, risks, and metadata
+2. **AI Analysis** — Gemini extracts decisions, action items, risks, and metadata
 3. **Human Review** — Edit any field inline, verify action items
 4. **Export** — Approve to generate `.md` and `.json` exports
 

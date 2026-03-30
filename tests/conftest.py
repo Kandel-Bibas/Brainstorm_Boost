@@ -36,3 +36,36 @@ def reset_singletons():
     embeddings._model = None
     yield
     embeddings._model = None
+
+
+@pytest.fixture(autouse=True)
+def isolate_chromadb(tmp_path, monkeypatch):
+    """Ensure tests never touch the real ChromaDB. Route all MeetingMemory instances to a temp dir."""
+    chroma_test_dir = str(tmp_path / "chroma_test")
+
+    original_init = None
+    try:
+        from meeting_memory import MeetingMemory
+        original_init = MeetingMemory.__init__
+
+        def patched_init(self, persist_dir=None):
+            original_init(self, persist_dir=chroma_test_dir)
+
+        monkeypatch.setattr(MeetingMemory, "__init__", patched_init)
+    except ImportError:
+        pass
+
+    # Reset the query module's singleton
+    try:
+        import routes.query as qmod
+        qmod._memory = None
+    except (ImportError, AttributeError):
+        pass
+
+    yield
+
+    try:
+        import routes.query as qmod
+        qmod._memory = None
+    except (ImportError, AttributeError):
+        pass

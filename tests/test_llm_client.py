@@ -37,18 +37,15 @@ def test_format_transcript():
 
 
 def test_get_available_providers_with_ollama(monkeypatch):
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
 
     with patch("llm_client._check_ollama_available", return_value=True):
         providers = get_available_providers()
-        assert "anthropic" in providers
+        assert "gemini" in providers
         assert "ollama" in providers
-        assert "gemini" not in providers
 
 
 def test_get_available_providers_ollama_down(monkeypatch):
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
 
     with patch("llm_client._check_ollama_available", return_value=False):

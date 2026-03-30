@@ -86,7 +86,7 @@ async def test_full_pipeline():
         with patch("routes.analyze.analyze_transcript", return_value=MOCK_AI_OUTPUT):
             res = await client.post(
                 "/api/analyze",
-                json={"meeting_id": meeting_id, "provider": "anthropic"},
+                json={"meeting_id": meeting_id, "provider": "gemini"},
             )
             assert res.status_code == 200
             assert res.json()["ai_output"]["decisions"][0]["id"] == "D1"

@@ -27,7 +27,7 @@ async def chat(request: Request):
         message (str): The user's message (required).
         session_id (str | None): Resume an existing session; creates a new one if omitted.
         context_meeting_id (str | None): Scope RAG retrieval to a specific meeting.
-        provider (str | None): LLM provider override (anthropic, gemini, ollama).
+        provider (str | None): LLM provider override (gemini, ollama).
 
     Returns:
         {session_id, response, sources}

@@ -1,12 +1,11 @@
 import { useState, useCallback } from 'react'
-import { Routes, Route, useNavigate } from 'react-router-dom'
+import { Routes, Route, useNavigate, useParams } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { useParams } from 'react-router-dom'
 import { Toaster } from 'sonner'
+import { Sidebar } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
 import { Dashboard } from '@/components/dashboard/Dashboard'
 import { MeetingDetail } from '@/components/meeting/MeetingDetail'
-import { MeetingsView } from '@/components/meetings/MeetingsView'
 import { LiveView } from '@/components/live/LiveView'
 import { JoinView } from '@/components/live/JoinView'
 import { UploadModal } from '@/components/upload/UploadModal'
@@ -53,20 +52,21 @@ function AppInner() {
   }, [navigate])
 
   return (
-    <div className="relative min-h-screen bg-background">
-      {/* Ambient background glow */}
-      <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div className="absolute -top-40 left-1/2 h-[500px] w-[800px] -translate-x-1/2 rounded-full bg-primary/20 blur-[120px]" />
-        <div className="absolute -bottom-40 left-1/4 h-[400px] w-[600px] rounded-full bg-chart-2/10 blur-[100px]" />
-      </div>
+    <div className="flex h-screen bg-[var(--bb-page-bg)]">
+      {/* Sidebar */}
+      <Sidebar provider={provider} onProviderChange={setProvider} />
 
-      {/* Content */}
-      <div className="relative z-10">
+      {/* Main content area */}
+      <div className="flex flex-1 flex-col overflow-hidden">
+        {/* Topbar */}
         <Header
           provider={provider}
           onProviderChange={setProvider}
+          onUploadClick={() => setUploadModalOpen(true)}
         />
-        <main className="mx-auto max-w-7xl px-6 py-10">
+
+        {/* Page content */}
+        <main className="flex-1 overflow-y-auto">
           <div className="fade-in">
             <Routes>
               <Route path="/" element={
@@ -88,9 +88,6 @@ function AppInner() {
               } />
               <Route path="/live" element={
                 <LiveView onReviewMeeting={(id) => navigate(`/meeting/${id}`)} />
-              } />
-              <Route path="/history" element={
-                <MeetingsView onSelectMeeting={(id) => navigate(`/meeting/${id}`)} />
               } />
               <Route path="/join" element={<JoinView />} />
               <Route path="/chat" element={<ChatPage provider={provider} />} />
@@ -120,9 +117,6 @@ export default function App() {
       <Toaster
         position="bottom-right"
         richColors
-        toastOptions={{
-          className: 'bg-card border-border text-foreground',
-        }}
       />
     </QueryClientProvider>
   )

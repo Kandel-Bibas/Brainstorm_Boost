@@ -9,6 +9,7 @@ interface TranscriptPanelProps {
   transcript: string
   highlightedRange?: { start: number; end: number } | null
   onClearHighlight?: () => void
+  initialSearch?: string
 }
 
 // Detect speaker lines like "Alice:" or "Speaker 1:" at start of line
@@ -92,22 +93,40 @@ export function TranscriptPanel({
   transcript,
   highlightedRange,
   onClearHighlight,
+  initialSearch,
 }: TranscriptPanelProps) {
   const [searchQuery, setSearchQuery] = useState('')
+
+  // Sync external search (fallback for items without source_start/end)
+  useEffect(() => {
+    if (initialSearch) {
+      setSearchQuery(initialSearch)
+    }
+  }, [initialSearch])
   const highlightRef = useRef<HTMLSpanElement>(null)
   const searchMatchRef = useRef<HTMLSpanElement>(null)
 
-  // Auto-scroll to highlighted range
+  // Auto-scroll to highlighted range (from source quote clicks)
   useEffect(() => {
-    if (highlightedRange && highlightRef.current) {
-      highlightRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    if (highlightedRange) {
+      const timer = setTimeout(() => {
+        if (highlightRef.current) {
+          highlightRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+      }, 100)
+      return () => clearTimeout(timer)
     }
   }, [highlightedRange])
 
   // Auto-scroll to first search match
   useEffect(() => {
-    if (searchQuery.length >= 2 && searchMatchRef.current) {
-      searchMatchRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    if (searchQuery.length >= 2) {
+      const timer = setTimeout(() => {
+        if (searchMatchRef.current) {
+          searchMatchRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+      }, 100)
+      return () => clearTimeout(timer)
     }
   }, [searchQuery])
 

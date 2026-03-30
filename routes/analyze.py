@@ -84,6 +84,15 @@ async def analyze(request: Request):
                 raise HTTPException(status_code=429, detail=f"Rate limited: {e}")
             raise HTTPException(status_code=502, detail=f"LLM API error: {e}")
 
+    # Extract and store the clean transcript if the pipeline produced one
+    clean_transcript = ai_output.pop("_clean_transcript", None)
+    if clean_transcript:
+        try:
+            from database import update_raw_transcript
+            update_raw_transcript(meeting_id, clean_transcript)
+        except Exception:
+            logger.exception("Failed to store clean transcript for %s", meeting_id)
+
     update_ai_output(meeting_id, ai_output)
 
     # Auto-update meeting title from AI-inferred title

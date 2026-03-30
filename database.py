@@ -145,6 +145,12 @@ def update_meeting_title(meeting_id: str, title: str):
         conn.execute("UPDATE meetings SET title = ? WHERE id = ?", (title, meeting_id))
 
 
+def update_raw_transcript(meeting_id: str, transcript: str):
+    """Replace the stored raw transcript with a normalized version."""
+    with get_connection() as conn:
+        conn.execute("UPDATE meetings SET raw_transcript = ? WHERE id = ?", (transcript, meeting_id))
+
+
 def update_verified_output(meeting_id: str, verified_output: dict):
     with get_connection() as conn:
         conn.execute(

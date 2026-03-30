@@ -1,4 +1,4 @@
-"""3-pass LLM extraction pipeline for building knowledge graphs from meeting transcripts."""
+"""LLM extraction pipeline with code-based post-processing for building knowledge graphs from meeting transcripts."""
 from __future__ import annotations
 
 import json
@@ -15,9 +15,7 @@ logger = logging.getLogger(__name__)
 
 ENTITY_SYSTEM_PROMPT = """You are an entity extraction system. You identify people, topics, decisions, action items, and risks from meeting transcripts. Return structured JSON only."""
 
-RESOLUTION_SYSTEM_PROMPT = """You are a meeting analysis reviewer. You clean, enrich, and connect entities extracted from meeting transcripts. You identify duplicates, classify commitment types, correct entity types, and map relationships. Return structured JSON only."""
-
-SYNTHESIS_SYSTEM_PROMPT = """You are a meeting analyst. Given a structured knowledge graph of a meeting, you produce a comprehensive meeting analysis. Return structured JSON only."""
+SUMMARY_SYSTEM_PROMPT = """You are a meeting analyst. Given a list of decisions, action items, and risks from a meeting, generate a concise title and summary. Return structured JSON only."""
 
 ENTITY_PROMPT_TEMPLATE = """Extract ALL entities from this meeting transcript segment.
 
@@ -51,56 +49,55 @@ Return JSON (no markdown fencing):
   {{"type": "risk", "content": "concern description", "properties": {{"severity": "high|medium|low", "raised_by": "name"}}, "source_quote": "exact words from transcript", "source_quote_speaker": "who said it"}}
 ]}}"""
 
-RESOLUTION_PROMPT_TEMPLATE = """You are reviewing and enriching entities extracted from a meeting transcript.
+SUMMARY_PROMPT_TEMPLATE = """Given these meeting items, generate a title and summary.
 
-ENTITIES (use ONLY these IDs):
-{entity_list}
+DECISIONS:
+{decisions}
 
-TRANSCRIPT CONTEXT:
-{context}
+ACTION ITEMS:
+{action_items}
 
-Perform these tasks:
+RISKS:
+{risks}
 
-1. FLAG DUPLICATES: List any entity pairs that are semantically the same thing.
-2. CLASSIFY COMMITMENTS: For each action_item, determine:
-   - commitment_type: "volunteered" (person offered), "assigned" (someone else directed them), "conditional" (hedged/qualified)
-3. CORRECT TYPES: Flag any entity whose type seems wrong (e.g., a "decision" that is actually an observation or question).
-4. IDENTIFY RELATIONSHIPS using these types:
-   - DECIDED: person -> decision
-   - RATIFIED: person -> decision
-   - OWNS: person -> action_item
-   - RAISED: person -> risk
-   - DISCUSSED: person -> topic
-   - DEPENDS_ON: action_item -> action_item
-   - RELATES_TO: any -> any
+PARTICIPANTS: {participants}
 
 Return JSON (no markdown fencing):
-{{
-  "duplicates": [{{"keep": "E1", "remove": "E5", "reason": "same decision rephrased"}}],
-  "commitment_updates": [{{"entity_id": "E4", "commitment_type": "volunteered"}}],
-  "type_corrections": [{{"entity_id": "E3", "current_type": "decision", "correct_type": "action_item", "reason": "this is a task, not a decision"}}],
-  "relationships": [
-    {{"source": "E1", "edge_type": "DECIDED", "target": "E3"}}
-  ]
-}}
-
-IMPORTANT: Use ONLY the entity IDs listed above."""
-
-SYNTHESIS_PROMPT_TEMPLATE = """Produce a structured meeting analysis from this knowledge graph.
-
-KNOWLEDGE GRAPH:
-{graph_text}
-
-Return JSON matching this schema (no markdown fencing):
-{schema}
-
-Use ONLY information present in the knowledge graph. Every item must trace back to a graph node."""
+{{"title": "concise meeting topic (5-10 words)", "state_of_direction": "2-3 sentence summary of overall project direction and momentum"}}}"""
 
 
 # --- Chunking (Fix 7: Speaker-turn chunking) ---
 
+def _format_turns_for_llm(turns: list[dict]) -> str:
+    """Format speaker turns into clean [timestamp] Speaker: text format for LLM."""
+    lines = []
+    for turn in turns:
+        speaker = turn.get("speaker", "Unknown")
+        text = turn.get("text", "")
+        # Extract timestamp if embedded in text (Otter format: "Name  HH:MM\ntext")
+        ts_match = re.search(r"(\d{1,2}:\d{2})", text[:20])
+        if ts_match:
+            ts = ts_match.group(1)
+            # Remove the speaker header line from the text
+            text = re.sub(r"^[A-Za-z][A-Za-z .'\-]+\s+\d{1,2}:\d{2}\s*\n?", "", text).strip()
+            lines.append(f"[{ts}] {speaker}: {text}")
+        else:
+            lines.append(f"{speaker}: {text}")
+    return "\n\n".join(lines)
+
+
+def normalize_transcript(text: str) -> str:
+    """Convert any transcript format into clean [timestamp] Speaker: text format.
+    Returns the normalized text. If no speaker turns detected, returns original."""
+    turns = _split_by_speaker_turns(text)
+    if turns and len(turns) >= 3:
+        return _format_turns_for_llm(turns)
+    return text
+
+
 def chunk_transcript(text: str, chunk_size: int = 500, overlap: int = 100) -> list[dict]:
-    """Split transcript into chunks. Uses speaker turns if detected, falls back to word count."""
+    """Split transcript into chunks. Uses speaker turns if detected, falls back to word count.
+    IMPORTANT: text should already be normalized via normalize_transcript()."""
     turns = _split_by_speaker_turns(text)
     if turns and len(turns) >= 3:
         return _chunk_by_turns(turns, group_size=12)
@@ -131,15 +128,24 @@ def _split_by_speaker_turns(text: str) -> list[dict]:
 
 
 def _chunk_by_turns(turns: list[dict], group_size: int = 12) -> list[dict]:
-    """Group speaker turns into chunks of ~group_size turns."""
+    """Group speaker turns into chunks of ~group_size turns.
+    Since the input text is already normalized, we compute offsets into that text."""
+    # Rebuild the full normalized text to get accurate character offsets
+    all_formatted = _format_turns_for_llm(turns)
+
     chunks = []
     for i in range(0, len(turns), group_size):
         group = turns[i:i + group_size]
-        text = "\n\n".join(t["text"] for t in group)
+        chunk_text = _format_turns_for_llm(group)
+        # Find this chunk's position in the full normalized text
+        start_pos = all_formatted.find(chunk_text)
+        if start_pos == -1:
+            start_pos = 0
+        end_pos = start_pos + len(chunk_text)
         chunks.append({
-            "text": text,
-            "start": group[0]["start"],
-            "end": group[-1]["end"],
+            "text": chunk_text,
+            "start": start_pos,
+            "end": end_pos,
         })
     return chunks
 
@@ -194,9 +200,25 @@ def _extract_speakers_from_transcript(raw_transcript: str) -> set[str]:
 
 # --- Source Quote Verification (Fix 2/9) ---
 
+_FILLER_WORDS = re.compile(r"\b(um|uh|like|you know|i mean|sort of|kind of|actually)\b", re.IGNORECASE)
+_EXTRA_WHITESPACE = re.compile(r"\s+")
+
+
+def _strip_fillers(text: str) -> str:
+    """Remove filler words and normalize whitespace."""
+    text = _FILLER_WORDS.sub(" ", text)
+    text = _EXTRA_WHITESPACE.sub(" ", text)
+    return text.strip()
+
+
 def _verify_source_quotes(entities: list[dict], raw_transcript: str) -> list[dict]:
     """Check each entity's source_quote exists in the transcript. Flag unverified ones."""
     transcript_lower = raw_transcript.lower()
+    transcript_no_fillers = _strip_fillers(transcript_lower)
+    # Also strip punctuation for looser matching
+    transcript_no_punct = re.sub(r"[\"'.,!?;:\-\u2014\u2013]", " ", transcript_lower)
+    transcript_no_punct = _EXTRA_WHITESPACE.sub(" ", transcript_no_punct)
+
     for e in entities:
         quote = e.get("properties", {}).get("source_quote", "") or e.get("source_quote", "")
         if quote:
@@ -208,14 +230,25 @@ def _verify_source_quotes(entities: list[dict], raw_transcript: str) -> list[dic
                 if quote_lower in transcript_lower:
                     verified = True
                 else:
-                    # Fuzzy: check if any 5-word window exists in transcript
-                    words = quote_lower.split()
-                    if len(words) >= 5:
-                        for i in range(len(words) - 4):
-                            window = " ".join(words[i:i+5])
-                            if window in transcript_lower:
-                                verified = True
-                                break
+                    # Try with filler words stripped from transcript
+                    quote_no_fillers = _strip_fillers(quote_lower)
+                    if quote_no_fillers in transcript_no_fillers:
+                        verified = True
+                    else:
+                        # Try without punctuation
+                        quote_no_punct = re.sub(r"[\"'.,!?;:\-\u2014\u2013]", " ", quote_lower)
+                        quote_no_punct = _EXTRA_WHITESPACE.sub(" ", quote_no_punct).strip()
+                        if quote_no_punct in transcript_no_punct:
+                            verified = True
+                        else:
+                            # Fuzzy: 4-word sliding window (down from 5)
+                            words = quote_no_fillers.split()
+                            if len(words) >= 4:
+                                for i in range(len(words) - 3):
+                                    window = " ".join(words[i:i+4])
+                                    if window in transcript_no_fillers:
+                                        verified = True
+                                        break
                 e["properties"]["quote_verified"] = verified
             else:
                 e["properties"]["quote_verified"] = False
@@ -321,10 +354,13 @@ def _format_entity_list(entities: list[dict]) -> str:
 # --- Deduplication (Fix 1: Semantic dedup) ---
 
 DEDUP_THRESHOLDS = {
-    "decision": 0.70,
-    "action_item": 0.70,
-    "risk": 0.75,
+    "decision": 0.60,
+    "action_item": 0.65,
+    "risk": 0.70,
 }
+
+# Lower threshold when action items share the same owner
+DEDUP_SAME_OWNER_THRESHOLD = 0.55
 
 
 def _deduplicate_entities(entities: list[dict]) -> list[dict]:
@@ -355,6 +391,23 @@ def _deduplicate_entities(entities: list[dict]) -> list[dict]:
                     unique.append(e)
             continue
 
+        # Substring dedup: if one content is a substring of another, keep the longer one
+        sorted_group = sorted(group, key=lambda e: len(e["content"]), reverse=True)
+        substring_merged = set()
+        for i, e in enumerate(sorted_group):
+            for j in range(i + 1, len(sorted_group)):
+                if j in substring_merged:
+                    continue
+                if sorted_group[j]["content"].strip().lower() in e["content"].strip().lower():
+                    substring_merged.add(j)
+                    logger.info("Substring dedup: '%s' is contained in '%s'",
+                                sorted_group[j]["content"][:50], e["content"][:50])
+        group = [e for i, e in enumerate(sorted_group) if i not in substring_merged]
+
+        if len(group) <= 1:
+            unique.extend(group)
+            continue
+
         # For decisions, action_items, risks — use embedding similarity
         contents = [e["content"] for e in group]
         embeddings = model.encode(contents)
@@ -371,13 +424,320 @@ def _deduplicate_entities(entities: list[dict]) -> list[dict]:
                 sim = float(np.dot(embeddings[i], embeddings[j]) / (
                     np.linalg.norm(embeddings[i]) * np.linalg.norm(embeddings[j]) + 1e-8
                 ))
+                # Use lower threshold if same owner (for action items)
                 threshold = DEDUP_THRESHOLDS.get(etype, 0.80)
+                if etype == "action_item":
+                    owner_i = (group[i].get("properties", {}).get("owner") or "").strip().lower()
+                    owner_j = (group[j].get("properties", {}).get("owner") or "").strip().lower()
+                    if owner_i and owner_j and owner_i == owner_j:
+                        threshold = DEDUP_SAME_OWNER_THRESHOLD
+
                 if sim > threshold:
                     merged.add(j)
-                    logger.info("Merged duplicate entities: '%s' ~ '%s' (sim=%.3f)",
-                                group[i]["content"][:50], group[j]["content"][:50], sim)
+                    logger.info("Merged duplicate entities: '%s' ~ '%s' (sim=%.3f, threshold=%.2f)",
+                                group[i]["content"][:50], group[j]["content"][:50], sim, threshold)
 
     return unique
+
+
+# --- Code-based Post-Processing (replaces LLM Pass 2) ---
+
+_VOLUNTEERED_PATTERNS = [
+    re.compile(r"\bi[''']?ll\b", re.IGNORECASE),
+    re.compile(r"\bi will\b", re.IGNORECASE),
+    re.compile(r"\bi[''']?m going to\b", re.IGNORECASE),
+    re.compile(r"\blet me\b", re.IGNORECASE),
+    re.compile(r"\bi can\b", re.IGNORECASE),
+    re.compile(r"\bi[''']?ll take\b", re.IGNORECASE),
+]
+
+_ASSIGNED_PATTERNS = [
+    re.compile(r"\bcan you\b", re.IGNORECASE),
+    re.compile(r"\bcould you\b", re.IGNORECASE),
+    re.compile(r"\byou should\b", re.IGNORECASE),
+    re.compile(r"\byou need to\b", re.IGNORECASE),
+    re.compile(r"\bplease\b.*\b(do|send|check|review|handle|submit|prepare)\b", re.IGNORECASE),
+]
+
+_CONDITIONAL_PATTERNS = [
+    re.compile(r"\bprobably\b", re.IGNORECASE),
+    re.compile(r"\bmaybe\b", re.IGNORECASE),
+    re.compile(r"\bmight\b", re.IGNORECASE),
+    re.compile(r"\btry to\b", re.IGNORECASE),
+    re.compile(r"\bif\b.{0,40}\bthen\b", re.IGNORECASE),
+    re.compile(r"\bshould\b", re.IGNORECASE),
+    re.compile(r"\bhopefully\b", re.IGNORECASE),
+]
+
+
+def _classify_commitments(entities: list[dict]) -> list[dict]:
+    """Classify action item commitment types using pattern matching on source quotes."""
+    for e in entities:
+        if e["type"] != "action_item":
+            continue
+        props = e.get("properties", {})
+        if props.get("commitment_type") and props["commitment_type"] != "unknown":
+            continue  # Already classified by LLM, don't override
+
+        quote = props.get("source_quote", "") or ""
+        content = e.get("content", "")
+        text = quote if quote else content
+
+        commitment_type = "unknown"
+
+        # Check volunteered first (strongest signal)
+        for pattern in _VOLUNTEERED_PATTERNS:
+            if pattern.search(text):
+                commitment_type = "volunteered"
+                break
+
+        # Check assigned (overrides volunteered if both present — "Can you" is stronger)
+        if commitment_type != "volunteered":
+            for pattern in _ASSIGNED_PATTERNS:
+                if pattern.search(text):
+                    commitment_type = "assigned"
+                    break
+
+        # Check conditional (overrides volunteered — hedging weakens commitment)
+        if commitment_type == "volunteered":
+            for pattern in _CONDITIONAL_PATTERNS:
+                if pattern.search(text):
+                    commitment_type = "conditional"
+                    break
+
+        # If no volunteered but conditional patterns found
+        if commitment_type == "unknown":
+            for pattern in _CONDITIONAL_PATTERNS:
+                if pattern.search(text):
+                    commitment_type = "conditional"
+                    break
+
+        e.setdefault("properties", {})["commitment_type"] = commitment_type
+
+    return entities
+
+
+def _build_relationships_from_entities(entities: list[dict]) -> list[dict]:
+    """Build relationship edges deterministically from entity properties."""
+    edges = []
+
+    # Build person name → short_id lookup
+    person_ids: dict[str, str] = {}
+    for e in entities:
+        if e["type"] == "person":
+            person_ids[e["content"].strip().lower()] = e["short_id"]
+
+    def _find_person_id(name: str) -> str | None:
+        """Find person entity by name (case-insensitive, partial match)."""
+        if not name:
+            return None
+        name_lower = name.strip().lower()
+        # Exact match
+        if name_lower in person_ids:
+            return person_ids[name_lower]
+        # Partial match: "Cody" matches "Cody Hayashi"
+        for full_name, sid in person_ids.items():
+            if name_lower in full_name or full_name in name_lower:
+                return sid
+        return None
+
+    for e in entities:
+        props = e.get("properties", {})
+
+        if e["type"] == "decision":
+            person_sid = _find_person_id(props.get("made_by", ""))
+            if person_sid:
+                edges.append({"source": person_sid, "edge_type": "DECIDED", "target": e["short_id"]})
+
+        elif e["type"] == "action_item":
+            person_sid = _find_person_id(props.get("owner", ""))
+            if person_sid:
+                edges.append({"source": person_sid, "edge_type": "OWNS", "target": e["short_id"]})
+
+        elif e["type"] == "risk":
+            person_sid = _find_person_id(props.get("raised_by", ""))
+            if person_sid:
+                edges.append({"source": person_sid, "edge_type": "RAISED", "target": e["short_id"]})
+
+    # Link speakers to topics they discussed (via source_quote_speaker)
+    for e in entities:
+        if e["type"] == "topic":
+            continue
+        speaker = e.get("properties", {}).get("source_quote_speaker", "")
+        if speaker:
+            person_sid = _find_person_id(speaker)
+            if person_sid:
+                # Find related topics (by keyword overlap in content)
+                for t in entities:
+                    if t["type"] == "topic":
+                        topic_words = set(t["content"].lower().split())
+                        content_words = set(e["content"].lower().split())
+                        if topic_words & content_words:
+                            edges.append({"source": person_sid, "edge_type": "DISCUSSED", "target": t["short_id"]})
+
+    return edges
+
+
+_ACTION_VERB_PATTERNS = [
+    re.compile(r"\bneed(?:s)? to\b", re.IGNORECASE),
+    re.compile(r"\bshould\b", re.IGNORECASE),
+    re.compile(r"\bwill have to\b", re.IGNORECASE),
+    re.compile(r"\bmust\b", re.IGNORECASE),
+    re.compile(r"\bhas to\b", re.IGNORECASE),
+    re.compile(r"\btask(?:ed)?\b", re.IGNORECASE),
+    re.compile(r"\bset up\b", re.IGNORECASE),
+    re.compile(r"\bsubmit\b", re.IGNORECASE),
+    re.compile(r"\bcomplete\b", re.IGNORECASE),
+    re.compile(r"\bfinish\b", re.IGNORECASE),
+    re.compile(r"\bprepare\b", re.IGNORECASE),
+]
+
+
+def _correct_entity_types(entities: list[dict]) -> list[dict]:
+    """Reclassify mistyped entities using heuristics. Conservative — only on strong signal."""
+    for e in entities:
+        if e["type"] == "decision":
+            props = e.get("properties", {})
+            made_by = props.get("made_by", "")
+            content = e["content"]
+
+            # A "decision" with no attribution and action verb patterns → action_item
+            if not made_by or not made_by.strip():
+                action_score = sum(1 for p in _ACTION_VERB_PATTERNS if p.search(content))
+                if action_score >= 1:
+                    logger.info("Reclassified decision -> action_item: '%s' (action_score=%d)",
+                                content[:60], action_score)
+                    e["type"] = "action_item"
+
+        elif e["type"] == "risk":
+            content = e["content"]
+            # A "risk" that reads like a task
+            action_score = sum(1 for p in _ACTION_VERB_PATTERNS if p.search(content))
+            if action_score >= 2:  # Stricter for risk → action_item
+                logger.info("Reclassified risk -> action_item: '%s' (action_score=%d)",
+                            content[:60], action_score)
+                e["type"] = "action_item"
+
+    return entities
+
+
+# --- Code-based Assembly (replaces LLM Pass 3) ---
+
+def _assemble_review_from_entities(entities: list[dict], edges: list[dict]) -> dict:
+    """Build the final review JSON directly from entities and edges. No LLM needed."""
+    decisions = []
+    action_items = []
+    risks = []
+    participants = []
+
+    for e in entities:
+        props = e.get("properties", {})
+
+        if e["type"] == "person":
+            if props.get("was_present", True):
+                participants.append(e["content"])
+
+        elif e["type"] == "decision":
+            made_by = props.get("made_by")
+            # Ensure made_by is None if empty, never empty string
+            if made_by and not made_by.strip():
+                made_by = None
+            decisions.append({
+                "id": f"D{len(decisions) + 1}",
+                "description": e["content"],
+                "decision_type": props.get("decision_type", "emergent"),
+                "made_by": made_by,
+                "confidence": props.get("confidence", "medium"),
+                "confidence_rationale": props.get("confidence_rationale", ""),
+                "source_quote": props.get("source_quote", ""),
+                "source_quote_speaker": props.get("source_quote_speaker", ""),
+                "source_start": e.get("chunk_start"),
+                "source_end": e.get("chunk_end"),
+            })
+
+        elif e["type"] == "action_item":
+            owner = props.get("owner")
+            if owner and not owner.strip():
+                owner = "Unassigned"
+            action_items.append({
+                "id": f"A{len(action_items) + 1}",
+                "task": e["content"],
+                "owner": owner or "Unassigned",
+                "deadline": props.get("deadline"),
+                "commitment_type": props.get("commitment_type", "unknown"),
+                "confidence": props.get("confidence", "medium"),
+                "confidence_rationale": props.get("confidence_rationale", ""),
+                "source_quote": props.get("source_quote", ""),
+                "source_quote_speaker": props.get("source_quote_speaker", ""),
+                "source_start": e.get("chunk_start"),
+                "source_end": e.get("chunk_end"),
+            })
+
+        elif e["type"] == "risk":
+            raised_by = props.get("raised_by")
+            if raised_by and not raised_by.strip():
+                raised_by = None
+            risks.append({
+                "id": f"R{len(risks) + 1}",
+                "description": e["content"],
+                "raised_by": raised_by,
+                "severity": props.get("severity", "medium"),
+                "source_quote": props.get("source_quote", ""),
+                "source_quote_speaker": props.get("source_quote_speaker", ""),
+                "source_start": e.get("chunk_start"),
+                "source_end": e.get("chunk_end"),
+            })
+
+    return {
+        "meeting_metadata": {
+            "title": None,  # Filled by small LLM call
+            "date_mentioned": None,
+            "participants": participants,
+            "duration_estimate": None,
+        },
+        "decisions": decisions,
+        "action_items": action_items,
+        "open_risks": risks,
+        "state_of_direction": "",  # Filled by small LLM call
+        "trust_flags": [],
+    }
+
+
+def _generate_summary(review: dict, provider: str = None) -> dict:
+    """Small LLM call: generate title + state_of_direction from assembled review."""
+    decisions_text = "\n".join(
+        f"- {d['description']}" for d in review.get("decisions", [])
+    ) or "(none)"
+    actions_text = "\n".join(
+        f"- {a['task']} (owner: {a.get('owner', '?')})" for a in review.get("action_items", [])
+    ) or "(none)"
+    risks_text = "\n".join(
+        f"- {r['description']}" for r in review.get("open_risks", [])
+    ) or "(none)"
+    participants = ", ".join(review.get("meeting_metadata", {}).get("participants", []))
+
+    prompt = SUMMARY_PROMPT_TEMPLATE.format(
+        decisions=decisions_text,
+        action_items=actions_text,
+        risks=risks_text,
+        participants=participants,
+    )
+
+    try:
+        result = generate(prompt, provider=provider, system_prompt=SUMMARY_SYSTEM_PROMPT)
+        if result.get("title"):
+            review["meeting_metadata"]["title"] = result["title"]
+        if result.get("state_of_direction"):
+            review["state_of_direction"] = result["state_of_direction"]
+    except Exception:
+        logger.exception("Summary generation failed, using fallback title")
+        # Fallback: use first decision or first topic as title
+        if review["decisions"]:
+            review["meeting_metadata"]["title"] = review["decisions"][0]["description"][:60]
+        else:
+            review["meeting_metadata"]["title"] = "Meeting Analysis"
+
+    return review
 
 
 # --- Pipeline ---
@@ -409,12 +769,15 @@ def run_extraction_pipeline(
     known_speakers = _extract_speakers_from_transcript(raw_transcript)
     logger.info("Pre-extracted %d speakers from transcript format: %s", len(known_speakers), known_speakers)
 
+    # Normalize transcript — single canonical text used for LLM, verification, and viewer
+    clean_transcript = normalize_transcript(raw_transcript)
+
     try:
         # --- Pass 1: Entity Extraction ---
         if progress_callback:
             progress_callback("extracting_entities", 0.1, "Extracting entities from transcript...")
         logger.info("Pass 1: Extracting entities from meeting %s", meeting_id)
-        chunks = chunk_transcript(raw_transcript)
+        chunks = chunk_transcript(clean_transcript)
         all_entities: list[dict] = []
 
         for chunk in chunks:
@@ -422,7 +785,7 @@ def run_extraction_pipeline(
             try:
                 response = generate(prompt, provider=provider, system_prompt=ENTITY_SYSTEM_PROMPT)
                 entities = parse_entity_response(response)
-                # Attach chunk offset info
+                # Attach chunk offset info — offsets into clean_transcript
                 for e in entities:
                     e["chunk_start"] = chunk["start"]
                     e["chunk_end"] = chunk["end"]
@@ -437,8 +800,8 @@ def run_extraction_pipeline(
                 progress_callback("fallback", 0.5, "Using fallback analysis...")
             return _fallback_single_shot(raw_transcript, provider)
 
-        # Fix 2/9: Verify source quotes programmatically
-        all_entities = _verify_source_quotes(all_entities, raw_transcript)
+        # Verify source quotes against the clean transcript (same text LLM saw)
+        all_entities = _verify_source_quotes(all_entities, clean_transcript)
 
         # Fix 1: Semantic dedup
         all_entities = _deduplicate_entities(all_entities)
@@ -451,6 +814,22 @@ def run_extraction_pipeline(
                 e.setdefault("properties", {})["was_present"] = (
                     e["content"].strip().lower() in known_speakers_lower
                 )
+
+        # --- Post-Processing (code-based, replaces LLM Pass 2) ---
+        if progress_callback:
+            progress_callback("building_relationships", 0.4, f"Processing {len(all_entities)} entities...")
+        logger.info("Post-processing: type correction, commitment classification, relationships for meeting %s", meeting_id)
+
+        # Step 1: Correct mistyped entities
+        all_entities = _correct_entity_types(all_entities)
+
+        # Step 2: Classify commitment types for action items
+        all_entities = _classify_commitments(all_entities)
+
+        # Step 3: Build relationships from entity properties
+        all_edges = _build_relationships_from_entities(all_entities)
+        valid_short_ids = {e["short_id"] for e in all_entities}
+        all_edges = validate_edges(all_edges, valid_short_ids)
 
         # Store entities in graph
         entity_id_map = {}  # short_id -> graph node_id
@@ -477,89 +856,6 @@ def run_extraction_pipeline(
             kg.add_transcript_chunk(meeting_id, i, chunk["text"],
                                     source_start=chunk["start"], source_end=chunk["end"])
 
-        # --- Pass 2: Structured Resolution (Fix 8) ---
-        if progress_callback:
-            progress_callback("building_relationships", 0.4, f"Building relationships between {len(all_entities)} entities...")
-        logger.info("Pass 2: Resolution and relationships for meeting %s", meeting_id)
-        valid_short_ids = {e["short_id"] for e in all_entities}
-
-        # Batch entities into groups of ~30
-        batch_size = 30
-        all_edges: list[dict] = []
-        all_duplicates: list[dict] = []
-        all_commitment_updates: list[dict] = []
-        all_type_corrections: list[dict] = []
-
-        for batch_start in range(0, len(all_entities), batch_size):
-            batch = all_entities[batch_start:batch_start + batch_size]
-            entity_list = _format_entity_list(batch)
-
-            # Fix 3: Use entity chunks, not hardcoded [:3000]
-            chunk_ranges = set()
-            for entity in batch:
-                cs = entity.get("chunk_start")
-                ce = entity.get("chunk_end")
-                if cs is not None and ce is not None:
-                    chunk_ranges.add((cs, ce))
-
-            if chunk_ranges:
-                sorted_ranges = sorted(chunk_ranges)
-                context_parts = []
-                for start, end in sorted_ranges:
-                    context_parts.append(raw_transcript[start:end])
-                context = "\n...\n".join(context_parts)
-            else:
-                context = raw_transcript[:3000]  # fallback
-
-            prompt = RESOLUTION_PROMPT_TEMPLATE.format(
-                entity_list=entity_list, context=context
-            )
-            try:
-                response = generate(prompt, provider=provider, system_prompt=RESOLUTION_SYSTEM_PROMPT)
-                resolution = parse_resolution_response(response)
-
-                edges = resolution["relationships"]
-                edges = validate_edges(edges, valid_short_ids)
-                all_edges.extend(edges)
-
-                all_duplicates.extend(resolution["duplicates"])
-                all_commitment_updates.extend(resolution["commitment_updates"])
-                all_type_corrections.extend(resolution["type_corrections"])
-            except Exception:
-                logger.exception("Pass 2 failed for entity batch starting at %d", batch_start)
-                continue
-
-        # Apply duplicate merges from Pass 2 (backup to embedding dedup)
-        ids_to_remove = set()
-        for dup in all_duplicates:
-            remove_id = dup.get("remove")
-            if remove_id and remove_id in valid_short_ids:
-                ids_to_remove.add(remove_id)
-                logger.info("Pass 2 flagged duplicate: remove %s, keep %s (%s)",
-                            remove_id, dup.get("keep"), dup.get("reason", ""))
-
-        if ids_to_remove:
-            all_entities = [e for e in all_entities if e["short_id"] not in ids_to_remove]
-            valid_short_ids -= ids_to_remove
-
-        # Apply commitment_type updates
-        entity_by_id = {e["short_id"]: e for e in all_entities}
-        for update in all_commitment_updates:
-            eid = update.get("entity_id")
-            if eid in entity_by_id:
-                entity_by_id[eid].setdefault("properties", {})["commitment_type"] = update["commitment_type"]
-
-        # Apply type corrections
-        for correction in all_type_corrections:
-            eid = correction.get("entity_id")
-            if eid in entity_by_id:
-                old_type = entity_by_id[eid]["type"]
-                new_type = correction.get("correct_type")
-                if new_type and new_type != old_type:
-                    logger.info("Pass 2 corrected type for %s: %s -> %s (%s)",
-                                eid, old_type, new_type, correction.get("reason", ""))
-                    entity_by_id[eid]["type"] = new_type
-
         # Store edges in graph
         for edge in all_edges:
             src_graph_id = entity_id_map.get(edge["source"])
@@ -567,27 +863,30 @@ def run_extraction_pipeline(
             if src_graph_id and tgt_graph_id:
                 kg.add_edge(src_graph_id, tgt_graph_id, edge["edge_type"], meeting_id)
 
-        # --- Pass 3: Review Synthesis ---
+        # --- Assembly + Summary (code-based, replaces LLM Pass 3) ---
         if progress_callback:
-            progress_callback("synthesizing", 0.7, "Synthesizing meeting analysis...")
-        logger.info("Pass 3: Synthesizing review for meeting %s", meeting_id)
-        subgraph = kg.get_meeting_subgraph(meeting_id)
-        graph_text = kg.serialize_subgraph_for_prompt(subgraph)
+            progress_callback("synthesizing", 0.7, "Assembling meeting analysis...")
+        logger.info("Assembly: building review JSON for meeting %s", meeting_id)
 
-        prompt = SYNTHESIS_PROMPT_TEMPLATE.format(graph_text=graph_text, schema=output_schema)
-        try:
-            review_output = generate(prompt, provider=provider, system_prompt=SYNTHESIS_SYSTEM_PROMPT)
-        except Exception:
-            logger.exception("Pass 3 failed, assembling minimal review from graph")
-            review_output = _assemble_review_from_graph(subgraph)
+        review_output = _assemble_review_from_entities(all_entities, all_edges)
 
-        # Fix 6: Add trust flags as post-processing
-        review_output = _add_trust_flags(review_output, raw_transcript, all_entities)
+        # One small LLM call for title + state_of_direction
+        if progress_callback:
+            progress_callback("summarizing", 0.85, "Generating summary...")
+        review_output = _generate_summary(review_output, provider=provider)
+
+        # Add trust flags as post-processing
+        review_output = _add_trust_flags(review_output, clean_transcript, all_entities)
 
         if progress_callback:
             progress_callback("complete", 1.0, "Analysis complete")
         logger.info("Pipeline complete for meeting %s: %d nodes, %d edges",
                      meeting_id, len(subgraph["nodes"]), len(subgraph["edges"]))
+
+        # Include the normalized transcript so the viewer shows the same text
+        # that the LLM saw (and that source_start/source_end point into)
+        review_output["_clean_transcript"] = clean_transcript
+
         return review_output
 
     except Exception:

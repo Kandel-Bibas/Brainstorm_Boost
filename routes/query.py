@@ -33,8 +33,10 @@ async def index_meeting(meeting_id: str):
     if not ai_output:
         raise HTTPException(status_code=400, detail="Meeting has no AI output to index")
 
+    raw_transcript = meeting.get("raw_transcript")
+
     memory = get_memory()
-    memory.index_meeting(meeting_id, ai_output)
+    memory.index_meeting(meeting_id, ai_output, raw_transcript=raw_transcript)
     return {"meeting_id": meeting_id, "status": "indexed"}
 
 
