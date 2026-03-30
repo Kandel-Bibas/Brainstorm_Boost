@@ -2,6 +2,8 @@ import json
 import json as json_module
 import asyncio
 import logging
+import queue
+import threading
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request
@@ -15,23 +17,45 @@ from llm_client import analyze_transcript, get_available_providers
 
 router = APIRouter(prefix="/api", tags=["analyze"])
 
-# Module-level progress store
-_analysis_progress: dict[str, dict] = {}
+# Module-level stores for streaming analysis
+_analysis_events: dict[str, queue.Queue] = {}  # meeting_id -> event queue
+_analysis_cancel: dict[str, bool] = {}  # meeting_id -> cancel flag
+
+
+def _emit_event(meeting_id: str, event: dict):
+    """Push an SSE event to the queue for a meeting."""
+    q = _analysis_events.get(meeting_id)
+    if q:
+        q.put(event)
 
 
 @router.get("/analyze/{meeting_id}/progress")
 async def analysis_progress(meeting_id: str):
-    """SSE endpoint for streaming analysis progress."""
+    """SSE endpoint for streaming analysis progress and entities."""
+    # Ensure queue exists
+    if meeting_id not in _analysis_events:
+        _analysis_events[meeting_id] = queue.Queue()
+
     async def event_stream():
+        q = _analysis_events[meeting_id]
         while True:
-            progress = _analysis_progress.get(meeting_id)
-            if progress:
-                yield f"data: {json_module.dumps(progress)}\n\n"
-                if progress.get("stage") in ("complete", "error"):
-                    _analysis_progress.pop(meeting_id, None)
+            try:
+                event = q.get_nowait()
+                yield f"data: {json_module.dumps(event)}\n\n"
+                if event.get("stage") in ("complete", "error"):
+                    _analysis_events.pop(meeting_id, None)
+                    _analysis_cancel.pop(meeting_id, None)
                     break
-            await asyncio.sleep(0.3)
+            except queue.Empty:
+                await asyncio.sleep(0.2)
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@router.post("/analyze/{meeting_id}/stop")
+async def stop_analysis(meeting_id: str):
+    """Cancel an in-progress analysis. Pipeline will finish current chunk then stop."""
+    _analysis_cancel[meeting_id] = True
+    return {"meeting_id": meeting_id, "status": "stopping"}
 
 
 @router.get("/providers")
@@ -58,12 +82,34 @@ async def analyze(request: Request):
 
     raw_transcript = meeting.get("raw_transcript", "")
 
+    # Initialize event queue and cancel flag
+    _analysis_events[meeting_id] = queue.Queue()
+    _analysis_cancel[meeting_id] = False
+
     def on_progress(stage, progress, message):
-        _analysis_progress[meeting_id] = {"stage": stage, "progress": progress, "message": message}
+        _emit_event(meeting_id, {"stage": stage, "progress": progress, "message": message})
+
+    def on_entities(entities, chunk_index, total_chunks):
+        """Called after each chunk — streams extracted entities to the frontend."""
+        _emit_event(meeting_id, {
+            "stage": "entities",
+            "chunk": chunk_index + 1,
+            "total_chunks": total_chunks,
+            "entities": entities,
+        })
+
+    def should_cancel():
+        """Check if the user requested cancellation."""
+        return _analysis_cancel.get(meeting_id, False)
 
     try:
         from extraction_pipeline import run_extraction_pipeline
-        ai_output = run_extraction_pipeline(meeting_id, raw_transcript, provider=provider, progress_callback=on_progress)
+        ai_output = run_extraction_pipeline(
+            meeting_id, raw_transcript, provider=provider,
+            progress_callback=on_progress,
+            entity_callback=on_entities,
+            cancel_check=should_cancel,
+        )
     except Exception as e:
         logger.warning("Extraction pipeline failed, falling back to single-shot: %s", e)
         try:

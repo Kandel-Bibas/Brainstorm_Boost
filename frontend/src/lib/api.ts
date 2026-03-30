@@ -82,6 +82,11 @@ export const api = {
     return res.json();
   },
 
+  async stopAnalysis(meetingId: string) {
+    const res = await fetch(`${BASE}/api/analyze/${meetingId}/stop`, { method: 'POST' });
+    return res.json();
+  },
+
   async approve(meetingId: string, verifiedOutput: AiOutput) {
     const res = await fetch(`${BASE}/api/approve`, {
       method: 'POST',

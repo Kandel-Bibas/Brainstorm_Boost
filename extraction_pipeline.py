@@ -776,13 +776,16 @@ def run_extraction_pipeline(
     provider: str = None,
     output_schema: str = None,
     progress_callback: callable = None,
+    entity_callback: callable = None,
+    cancel_check: callable = None,
 ) -> dict:
-    """Run the full 3-pass extraction pipeline.
+    """Run the extraction pipeline with streaming entity support.
 
-    Returns the review JSON (same shape as ai_output_json) and populates
-    the knowledge graph in SQLite.
+    Args:
+        entity_callback: Called after each chunk with (entities, chunk_index, total_chunks).
+        cancel_check: Returns True if the user requested cancellation.
 
-    Falls back to single-shot analyze_transcript() if the pipeline fails.
+    Returns the review JSON and populates the knowledge graph.
     """
     from llm_client import OUTPUT_SCHEMA
     if output_schema is None:
@@ -810,8 +813,22 @@ def run_extraction_pipeline(
 
         # Select prompt based on provider — simpler prompt for local models
         entity_template = ENTITY_PROMPT_LOCAL if provider == "ollama" else ENTITY_PROMPT_TEMPLATE
+        total_chunks = len(chunks)
 
-        for chunk in chunks:
+        for chunk_idx, chunk in enumerate(chunks):
+            # Check cancellation before each chunk
+            if cancel_check and cancel_check():
+                logger.info("Pipeline cancelled by user after %d/%d chunks", chunk_idx, total_chunks)
+                if progress_callback:
+                    progress_callback("cancelled", chunk_idx / total_chunks,
+                                      f"Stopped after {chunk_idx}/{total_chunks} chunks")
+                break
+
+            if progress_callback:
+                progress_callback("extracting_entities",
+                                  0.1 + (0.6 * chunk_idx / total_chunks),
+                                  f"Extracting entities from chunk {chunk_idx + 1}/{total_chunks}...")
+
             prompt = entity_template.format(chunk=chunk["text"])
             try:
                 response = generate(prompt, provider=provider, system_prompt=ENTITY_SYSTEM_PROMPT)
@@ -821,6 +838,29 @@ def run_extraction_pipeline(
                     e["chunk_start"] = chunk["start"]
                     e["chunk_end"] = chunk["end"]
                 all_entities.extend(entities)
+
+                # Stream entities to frontend as they're extracted
+                if entity_callback and entities:
+                    # Convert to display-friendly format
+                    display_entities = []
+                    for e in entities:
+                        de = {"type": e["type"], "content": e["content"]}
+                        props = e.get("properties", {})
+                        if props.get("made_by"):
+                            de["made_by"] = props["made_by"]
+                        if props.get("owner"):
+                            de["owner"] = props["owner"]
+                        if props.get("raised_by"):
+                            de["raised_by"] = props["raised_by"]
+                        if props.get("confidence"):
+                            de["confidence"] = props["confidence"]
+                        if props.get("severity"):
+                            de["severity"] = props["severity"]
+                        if e.get("source_quote") or props.get("source_quote"):
+                            de["source_quote"] = e.get("source_quote") or props.get("source_quote", "")
+                        display_entities.append(de)
+                    entity_callback(display_entities, chunk_idx, total_chunks)
+
             except Exception:
                 logger.exception("Pass 1 failed for chunk at position %d", chunk["start"])
                 continue

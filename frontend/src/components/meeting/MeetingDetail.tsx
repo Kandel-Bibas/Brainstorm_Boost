@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   ArrowLeft,
   Loader2,
@@ -13,6 +13,7 @@ import {
   Calendar,
   Users,
   Clock,
+  Square,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, type AiOutput } from '@/lib/api'
@@ -278,6 +279,170 @@ function AnalysisPanel({ aiOutput, onQuoteClick }: {
 // Main component — split pane: transcript left, analysis right
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Streaming panel — shows entities as they arrive during analysis
+// ---------------------------------------------------------------------------
+
+function StreamingPanel({ entities, progress, chunk, isAnalyzing, onStop }: {
+  entities: StreamingEntity[]
+  progress: string
+  chunk: { current: number; total: number }
+  isAnalyzing: boolean
+  onStop: () => void
+}) {
+  const decisions = entities.filter(e => e.type === 'decision')
+  const actionItems = entities.filter(e => e.type === 'action_item')
+  const risks = entities.filter(e => e.type === 'risk')
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  // Auto-scroll to bottom as new entities arrive
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    }
+  }, [entities.length])
+
+  return (
+    <div ref={scrollRef} className="p-6 space-y-5">
+      {/* Progress bar */}
+      <div className="flex items-center gap-3">
+        {isAnalyzing && <Loader2 className="size-4 animate-spin text-[var(--bb-accent)]" />}
+        <div className="flex-1">
+          <div className="flex items-center justify-between text-xs text-[var(--bb-text-muted)] mb-1">
+            <span>{progress || 'Analyzing...'}</span>
+            {chunk.total > 0 && (
+              <span>Chunk {chunk.current}/{chunk.total}</span>
+            )}
+          </div>
+          {chunk.total > 0 && (
+            <div className="h-1 rounded-full bg-[var(--bb-border)] overflow-hidden">
+              <div
+                className="h-full rounded-full bg-[var(--bb-accent)] transition-all duration-500"
+                style={{ width: `${(chunk.current / chunk.total) * 100}%` }}
+              />
+            </div>
+          )}
+        </div>
+        {isAnalyzing && (
+          <button
+            type="button"
+            onClick={onStop}
+            className="flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs text-red-600 transition-colors hover:bg-red-100 dark:border-red-900 dark:bg-red-950/20 dark:text-red-400"
+          >
+            <Square className="size-3" />
+            Stop
+          </button>
+        )}
+      </div>
+
+      {/* Streaming decisions */}
+      {decisions.length > 0 && (
+        <section>
+          <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--bb-text-muted)]">
+            Decisions ({decisions.length})
+          </h3>
+          <div className="space-y-2">
+            {decisions.map((d, i) => (
+              <div
+                key={i}
+                className={`rounded-lg border bg-[var(--bb-surface)] px-4 py-3 transition-all duration-500 ${d._animating ? 'fade-in border-[var(--bb-status-green)]/40 bg-green-50/50 dark:bg-green-950/10' : 'border-[var(--bb-border)]'}`}
+              >
+                <div className="flex items-start gap-3">
+                  <IdBadge id={`D${i + 1}`} color="var(--bb-status-green, #00c875)" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-[var(--bb-text-primary)]">{d.content}</p>
+                    <div className="mt-1 flex items-center gap-2 text-xs text-[var(--bb-text-muted)]">
+                      {d.made_by && <span>{d.made_by}</span>}
+                      {d.confidence && <ConfidenceBadge level={d.confidence} />}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Streaming action items */}
+      {actionItems.length > 0 && (
+        <section>
+          <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--bb-text-muted)]">
+            Action Items ({actionItems.length})
+          </h3>
+          <div className="space-y-2">
+            {actionItems.map((a, i) => (
+              <div
+                key={i}
+                className={`rounded-lg border bg-[var(--bb-surface)] px-4 py-3 transition-all duration-500 ${a._animating ? 'fade-in border-[var(--bb-accent)]/40 bg-blue-50/50 dark:bg-blue-950/10' : 'border-[var(--bb-border)]'}`}
+              >
+                <div className="flex items-start gap-3">
+                  <IdBadge id={`A${i + 1}`} color="var(--bb-accent, #4a90d9)" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-[var(--bb-text-primary)]">{a.content}</p>
+                    <div className="mt-1 flex items-center gap-2 text-xs text-[var(--bb-text-muted)]">
+                      {a.owner && <span>{a.owner}</span>}
+                      {a.confidence && <ConfidenceBadge level={a.confidence} />}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Streaming risks */}
+      {risks.length > 0 && (
+        <section>
+          <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--bb-text-muted)]">
+            Open Risks ({risks.length})
+          </h3>
+          <div className="space-y-2">
+            {risks.map((r, i) => (
+              <div
+                key={i}
+                className={`rounded-lg border bg-[var(--bb-surface)] px-4 py-3 transition-all duration-500 ${r._animating ? 'fade-in border-red-300/40 bg-red-50/50 dark:bg-red-950/10' : 'border-[var(--bb-border)]'}`}
+              >
+                <div className="flex items-start gap-3">
+                  <IdBadge id={`R${i + 1}`} color="var(--bb-status-red, #e2445c)" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-[var(--bb-text-primary)]">{r.content}</p>
+                    <div className="mt-1 flex items-center gap-2 text-xs text-[var(--bb-text-muted)]">
+                      {r.raised_by && <span>{r.raised_by}</span>}
+                      {r.severity && <ConfidenceBadge level={r.severity} />}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Empty state while waiting for first chunk */}
+      {entities.length === 0 && isAnalyzing && (
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <Loader2 className="size-6 animate-spin text-[var(--bb-accent)] mb-3" />
+          <p className="text-sm text-[var(--bb-text-muted)]">Waiting for first extraction results...</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Streaming entity type for live analysis
+interface StreamingEntity {
+  type: string
+  content: string
+  made_by?: string
+  owner?: string
+  raised_by?: string
+  confidence?: string
+  severity?: string
+  source_quote?: string
+  _animating?: boolean  // For typewriter effect
+}
+
 export function MeetingDetail({ meetingId, onBack, provider }: MeetingDetailProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -288,6 +453,13 @@ export function MeetingDetail({ meetingId, onBack, provider }: MeetingDetailProp
   const [transcript, setTranscript] = useState('')
   const [reindexing, setReindexing] = useState(false)
   const [highlightedRange, setHighlightedRange] = useState<{ start: number; end: number } | null>(null)
+
+  // Streaming state
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [streamingEntities, setStreamingEntities] = useState<StreamingEntity[]>([])
+  const [analysisProgress, setAnalysisProgress] = useState('')
+  const [chunkProgress, setChunkProgress] = useState({ current: 0, total: 0 })
+  const eventSourceRef = useRef<EventSource | null>(null)
 
   // ------ Data fetching ------
   useEffect(() => {
@@ -308,6 +480,9 @@ export function MeetingDetail({ meetingId, onBack, provider }: MeetingDetailProp
         if (output) {
           setAiOutput(output)
           if (detail.verified_output_json) setApproved(true)
+        } else if (detail.status === 'uploaded') {
+          // Meeting was just uploaded — analysis is starting, subscribe to SSE
+          setIsAnalyzing(true)
         }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load meeting')
@@ -317,6 +492,86 @@ export function MeetingDetail({ meetingId, onBack, provider }: MeetingDetailProp
     }
     fetchMeeting()
     return () => { cancelled = true }
+  }, [meetingId])
+
+  // ------ SSE subscription for live entity streaming ------
+  useEffect(() => {
+    if (!isAnalyzing) return
+
+    const es = new EventSource(`/api/analyze/${meetingId}/progress`)
+    eventSourceRef.current = es
+
+    es.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+
+        if (data.stage === 'entities') {
+          // New entities arrived from a chunk
+          const newEntities: StreamingEntity[] = (data.entities || []).map((e: any) => ({
+            ...e,
+            _animating: true,
+          }))
+          setStreamingEntities(prev => [...prev, ...newEntities])
+          setChunkProgress({ current: data.chunk, total: data.total_chunks })
+
+          // Remove animation flag after delay
+          setTimeout(() => {
+            setStreamingEntities(prev =>
+              prev.map(e => e._animating ? { ...e, _animating: false } : e)
+            )
+          }, 800)
+
+        } else if (data.stage === 'complete' || data.stage === 'cancelled') {
+          // Analysis done — reload the full meeting data
+          es.close()
+          eventSourceRef.current = null
+          setIsAnalyzing(false)
+          // Refetch to get the final assembled output
+          api.getMeeting(meetingId).then(detail => {
+            const output = detail.verified_output_json ?? detail.ai_output_json
+            if (output) setAiOutput(output)
+            setMeetingTitle(detail.title ?? meetingTitle)
+            setMeetingStatus(detail.status ?? '')
+            setStreamingEntities([])
+          }).catch(() => {})
+
+        } else if (data.stage === 'error') {
+          es.close()
+          eventSourceRef.current = null
+          setIsAnalyzing(false)
+
+        } else if (data.message) {
+          setAnalysisProgress(data.message)
+        }
+      } catch {}
+    }
+
+    es.onerror = () => {
+      es.close()
+      eventSourceRef.current = null
+      // Don't set isAnalyzing false — the analysis might still be running
+      // Refetch after a delay
+      setTimeout(() => {
+        api.getMeeting(meetingId).then(detail => {
+          const output = detail.verified_output_json ?? detail.ai_output_json
+          if (output) {
+            setAiOutput(output)
+            setIsAnalyzing(false)
+            setStreamingEntities([])
+          }
+        }).catch(() => {})
+      }, 2000)
+    }
+
+    return () => {
+      es.close()
+      eventSourceRef.current = null
+    }
+  }, [isAnalyzing, meetingId])
+
+  // ------ Stop analysis ------
+  const handleStop = useCallback(() => {
+    api.stopAnalysis(meetingId).catch(() => {})
   }, [meetingId])
 
   // ------ Quote click → find in transcript and highlight ------
@@ -479,10 +734,18 @@ export function MeetingDetail({ meetingId, onBack, provider }: MeetingDetailProp
           </div>
         )}
 
-        {/* Right — Analysis */}
+        {/* Right — Analysis or Streaming */}
         <div className={`${transcript ? 'w-[60%]' : 'w-full'} overflow-y-auto min-h-0`}>
           {aiOutput ? (
             <AnalysisPanel aiOutput={aiOutput} onQuoteClick={handleQuoteClick} />
+          ) : isAnalyzing || streamingEntities.length > 0 ? (
+            <StreamingPanel
+              entities={streamingEntities}
+              progress={analysisProgress}
+              chunk={chunkProgress}
+              isAnalyzing={isAnalyzing}
+              onStop={handleStop}
+            />
           ) : (
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <AlertCircle className="size-8 text-[var(--bb-text-muted)]" />

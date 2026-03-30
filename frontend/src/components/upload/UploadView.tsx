@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { Upload, FileText, AudioLines, Loader2, X, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, type AiOutput } from '@/lib/api'
@@ -85,34 +85,11 @@ export function UploadView({ onAnalysisComplete, provider }: UploadViewProps) {
         meetingId = result.meeting_id
       }
 
-      setStatus('analyzing')
-      setProgressPercent(10)
-      setProgressMessage('Starting analysis...')
-
-      const eventSource = new EventSource(`/api/analyze/${meetingId}/progress`)
-      eventSourceRef.current = eventSource
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data)
-          setProgressPercent(Math.round(data.progress * 100))
-          setProgressMessage(data.message)
-          if (data.stage === 'complete' || data.stage === 'error') {
-            eventSource.close()
-            eventSourceRef.current = null
-          }
-        } catch {}
-      }
-      eventSource.onerror = () => {
-        eventSource.close()
-        eventSourceRef.current = null
-      }
-
-      const analysisResult = await api.analyze(meetingId, provider)
-      eventSourceRef.current?.close()
-      eventSourceRef.current = null
+      // Navigate to meeting page immediately — it will handle SSE streaming
+      // Kick off analysis in the background (don't await)
+      api.analyze(meetingId, provider).catch(() => {})
       setStatus('done')
-      toast.success('Analysis complete')
-      onAnalysisComplete(meetingId, analysisResult.ai_output)
+      onAnalysisComplete(meetingId, {} as any)
     } catch (err) {
       eventSourceRef.current?.close()
       eventSourceRef.current = null
