@@ -17,6 +17,7 @@ ENTITY_SYSTEM_PROMPT = """You are an entity extraction system. You identify peop
 
 SUMMARY_SYSTEM_PROMPT = """You are a meeting analyst. Given a list of decisions, action items, and risks from a meeting, generate a concise title and summary. Return structured JSON only."""
 
+# Full prompt for cloud models (Gemini) — detailed instructions
 ENTITY_PROMPT_TEMPLATE = """Extract ALL entities from this meeting transcript segment.
 
 TRANSCRIPT SEGMENT:
@@ -49,6 +50,33 @@ Return JSON (no markdown fencing):
   {{"type": "risk", "content": "concern description", "properties": {{"severity": "high|medium|low", "raised_by": "name"}}, "source_quote": "exact words from transcript", "source_quote_speaker": "who said it"}}
 ]}}"""
 
+# Simplified prompt for local models (7-9B) — fewer instructions, same schema
+ENTITY_PROMPT_LOCAL = """/no_think
+Extract entities from this meeting transcript.
+
+TRANSCRIPT:
+{chunk}
+
+Extract these entity types:
+- person: speaker names
+- topic: subjects discussed
+- decision: what was decided, who decided it
+- action_item: tasks to do, who owns them, deadline if mentioned
+- risk: concerns or problems raised
+
+For each decision/action_item/risk, include a source_quote copied exactly from the transcript.
+
+Confidence: "high" = specific commitment with deadline, "medium" = general agreement, "low" = vague or uncertain.
+
+Return JSON:
+{{"entities": [
+  {{"type": "person", "content": "name"}},
+  {{"type": "topic", "content": "topic"}},
+  {{"type": "decision", "content": "what was decided", "properties": {{"confidence": "high|medium|low", "made_by": "person name"}}, "source_quote": "exact words"}},
+  {{"type": "action_item", "content": "task", "properties": {{"owner": "name", "deadline": "when or null", "confidence": "high|medium|low"}}, "source_quote": "exact words"}},
+  {{"type": "risk", "content": "concern", "properties": {{"severity": "high|medium|low", "raised_by": "name"}}, "source_quote": "exact words"}}
+]}}"""
+
 SUMMARY_PROMPT_TEMPLATE = """Given these meeting items, generate a title and summary.
 
 DECISIONS:
@@ -63,7 +91,7 @@ RISKS:
 PARTICIPANTS: {participants}
 
 Return JSON (no markdown fencing):
-{{"title": "concise meeting topic (5-10 words)", "state_of_direction": "2-3 sentence summary of overall project direction and momentum"}}}"""
+{{"title": "concise meeting topic (5-10 words)", "state_of_direction": "2-3 sentence summary of overall project direction and momentum"}}"""
 
 
 # --- Chunking (Fix 7: Speaker-turn chunking) ---
@@ -780,8 +808,11 @@ def run_extraction_pipeline(
         chunks = chunk_transcript(clean_transcript)
         all_entities: list[dict] = []
 
+        # Select prompt based on provider — simpler prompt for local models
+        entity_template = ENTITY_PROMPT_LOCAL if provider == "ollama" else ENTITY_PROMPT_TEMPLATE
+
         for chunk in chunks:
-            prompt = ENTITY_PROMPT_TEMPLATE.format(chunk=chunk["text"])
+            prompt = entity_template.format(chunk=chunk["text"])
             try:
                 response = generate(prompt, provider=provider, system_prompt=ENTITY_SYSTEM_PROMPT)
                 entities = parse_entity_response(response)
@@ -880,8 +911,8 @@ def run_extraction_pipeline(
 
         if progress_callback:
             progress_callback("complete", 1.0, "Analysis complete")
-        logger.info("Pipeline complete for meeting %s: %d nodes, %d edges",
-                     meeting_id, len(subgraph["nodes"]), len(subgraph["edges"]))
+        logger.info("Pipeline complete for meeting %s: %d entities, %d edges",
+                     meeting_id, len(all_entities), len(all_edges))
 
         # Include the normalized transcript so the viewer shows the same text
         # that the LLM saw (and that source_start/source_end point into)

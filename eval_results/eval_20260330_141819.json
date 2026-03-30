@@ -1,0 +1,49 @@
+{
+  "qwen3.5:latest": [
+    {
+      "meeting_id": "c43984b6-a17f-4558-87bd-80715f86f760",
+      "meeting_title": "Phase One Demo and Future Development Discussion",
+      "scores": {
+        "json_ok": false,
+        "elapsed": 120.04332113265991,
+        "entity_count": 0,
+        "decisions": 0,
+        "action_items": 0,
+        "risks": 0,
+        "persons": 0,
+        "has_quotes": 0
+      },
+      "error": "Timeout (120s)"
+    },
+    {
+      "meeting_id": "b67fc581-6fe7-4514-9721-bbd441c19a1c",
+      "meeting_title": "Prototype Development and Collaboration",
+      "scores": {
+        "json_ok": false,
+        "elapsed": 120.01436805725098,
+        "entity_count": 0,
+        "decisions": 0,
+        "action_items": 0,
+        "risks": 0,
+        "persons": 0,
+        "has_quotes": 0
+      },
+      "error": "Timeout (120s)"
+    },
+    {
+      "meeting_id": "af1d127d-fab9-4ae7-ad33-71bdf4a0b3cc",
+      "meeting_title": "Project Discussion",
+      "scores": {
+        "json_ok": false,
+        "elapsed": 120.01563477516174,
+        "entity_count": 0,
+        "decisions": 0,
+        "action_items": 0,
+        "risks": 0,
+        "persons": 0,
+        "has_quotes": 0
+      },
+      "error": "Timeout (120s)"
+    }
+  ]
+}

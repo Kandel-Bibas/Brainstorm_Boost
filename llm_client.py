@@ -12,8 +12,8 @@ load_dotenv()
 _gemini_client = None
 
 GEMINI_MODEL = "gemini-2.0-flash"
-OLLAMA_BASE_URL = "http://localhost:11434"
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b-instruct-q4_K_M")
+OLLAMA_BASE_URL = os.getenv("LOCAL_LLM_URL", "http://localhost:1234")
+OLLAMA_MODEL = os.getenv("LOCAL_LLM_MODEL", "qwen2.5-7b-instruct")
 
 RE_JSON_FENCE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?\s*```", re.DOTALL)
 
@@ -136,8 +136,13 @@ TRANSCRIPT:
 
 
 def _check_ollama_available() -> bool:
-    """Check if Ollama is running and has at least one model."""
+    """Check if a local LLM server (Ollama or LM Studio) is running."""
     try:
+        # Try OpenAI-compatible endpoint first (works for both LM Studio and Ollama)
+        resp = httpx.get(f"{OLLAMA_BASE_URL}/v1/models", timeout=2.0)
+        if resp.status_code == 200:
+            return True
+        # Fallback: Ollama-specific endpoint
         resp = httpx.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=2.0)
         return resp.status_code == 200
     except (httpx.ConnectError, httpx.TimeoutException):
@@ -262,7 +267,7 @@ def _analyze_with_ollama(user_prompt: str, system_prompt: str = SYSTEM_PROMPT) -
     except (json.JSONDecodeError, ValueError):
         pass
 
-    # Retry with stricter prompt
+    # Retry with stricter prompt and lower temperature
     retry_prompt = (
         user_prompt
         + "\n\nIMPORTANT: Your previous response was not valid JSON. "

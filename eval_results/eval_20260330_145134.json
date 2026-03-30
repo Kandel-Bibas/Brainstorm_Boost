@@ -1,0 +1,23 @@
+{
+  "qwen/qwen3.5-4b": [
+    {
+      "meeting_id": "c43984b6-a17f-4558-87bd-80715f86f760",
+      "meeting_title": "Phase One Demo and Future Development Discussion",
+      "scores": {
+        "json_ok": true,
+        "elapsed": 132.83824396133423,
+        "entity_count": 6,
+        "persons": 2,
+        "decisions": 2,
+        "action_items": 0,
+        "risks": 0,
+        "has_quotes": 2,
+        "quote_rate": 100.0,
+        "existing_decisions": 1,
+        "existing_actions": 5,
+        "existing_risks": 4
+      },
+      "error": null
+    }
+  ]
+}

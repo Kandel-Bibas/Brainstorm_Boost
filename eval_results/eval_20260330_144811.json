@@ -1,0 +1,19 @@
+{
+  "qwen/qwen3.5-4b": [
+    {
+      "meeting_id": "c43984b6-a17f-4558-87bd-80715f86f760",
+      "meeting_title": "Phase One Demo and Future Development Discussion",
+      "scores": {
+        "json_ok": false,
+        "elapsed": 17.40311598777771,
+        "entity_count": 0,
+        "decisions": 0,
+        "action_items": 0,
+        "risks": 0,
+        "persons": 0,
+        "has_quotes": 0
+      },
+      "error": "JSON parse failed: Could not parse JSON from LLM response: ..."
+    }
+  ]
+}

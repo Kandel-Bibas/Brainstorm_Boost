@@ -1,0 +1,96 @@
+{
+  "qwen3:8b": [
+    {
+      "meeting_id": "c43984b6-a17f-4558-87bd-80715f86f760",
+      "meeting_title": "Phase One Demo and Future Development Discussion",
+      "scores": {
+        "json_ok": false,
+        "elapsed": 2.0299458503723145,
+        "entity_count": 0,
+        "decisions": 0,
+        "action_items": 0,
+        "risks": 0,
+        "persons": 0,
+        "has_quotes": 0
+      },
+      "error": "HTTP 500"
+    },
+    {
+      "meeting_id": "b67fc581-6fe7-4514-9721-bbd441c19a1c",
+      "meeting_title": "Prototype Development and Collaboration",
+      "scores": {
+        "json_ok": false,
+        "elapsed": 2.0101377964019775,
+        "entity_count": 0,
+        "decisions": 0,
+        "action_items": 0,
+        "risks": 0,
+        "persons": 0,
+        "has_quotes": 0
+      },
+      "error": "HTTP 500"
+    },
+    {
+      "meeting_id": "af1d127d-fab9-4ae7-ad33-71bdf4a0b3cc",
+      "meeting_title": "Project Discussion",
+      "scores": {
+        "json_ok": false,
+        "elapsed": 2.014880895614624,
+        "entity_count": 0,
+        "decisions": 0,
+        "action_items": 0,
+        "risks": 0,
+        "persons": 0,
+        "has_quotes": 0
+      },
+      "error": "HTTP 500"
+    }
+  ],
+  "qwen2.5:7b-instruct-q4_K_M": [
+    {
+      "meeting_id": "c43984b6-a17f-4558-87bd-80715f86f760",
+      "meeting_title": "Phase One Demo and Future Development Discussion",
+      "scores": {
+        "json_ok": false,
+        "elapsed": 4.61899995803833,
+        "entity_count": 0,
+        "decisions": 0,
+        "action_items": 0,
+        "risks": 0,
+        "persons": 0,
+        "has_quotes": 0
+      },
+      "error": "HTTP 500"
+    },
+    {
+      "meeting_id": "b67fc581-6fe7-4514-9721-bbd441c19a1c",
+      "meeting_title": "Prototype Development and Collaboration",
+      "scores": {
+        "json_ok": false,
+        "elapsed": 4.076143980026245,
+        "entity_count": 0,
+        "decisions": 0,
+        "action_items": 0,
+        "risks": 0,
+        "persons": 0,
+        "has_quotes": 0
+      },
+      "error": "HTTP 500"
+    },
+    {
+      "meeting_id": "af1d127d-fab9-4ae7-ad33-71bdf4a0b3cc",
+      "meeting_title": "Project Discussion",
+      "scores": {
+        "json_ok": false,
+        "elapsed": 3.4833617210388184,
+        "entity_count": 0,
+        "decisions": 0,
+        "action_items": 0,
+        "risks": 0,
+        "persons": 0,
+        "has_quotes": 0
+      },
+      "error": "HTTP 500"
+    }
+  ]
+}

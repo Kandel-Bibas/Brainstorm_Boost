@@ -1,0 +1,61 @@
+{
+  "qwen2.5-7b-instruct": [
+    {
+      "meeting_id": "c43984b6-a17f-4558-87bd-80715f86f760",
+      "meeting_title": "Phase One Demo and Future Development Discussion",
+      "scores": {
+        "json_ok": true,
+        "elapsed": 24.92813491821289,
+        "entity_count": 7,
+        "persons": 2,
+        "decisions": 1,
+        "action_items": 2,
+        "risks": 1,
+        "has_quotes": 4,
+        "quote_rate": 100.0,
+        "existing_decisions": 1,
+        "existing_actions": 5,
+        "existing_risks": 4
+      },
+      "error": null
+    },
+    {
+      "meeting_id": "b67fc581-6fe7-4514-9721-bbd441c19a1c",
+      "meeting_title": "Prototype Development and Collaboration",
+      "scores": {
+        "json_ok": true,
+        "elapsed": 22.662362098693848,
+        "entity_count": 6,
+        "persons": 2,
+        "decisions": 1,
+        "action_items": 2,
+        "risks": 0,
+        "has_quotes": 3,
+        "quote_rate": 100.0,
+        "existing_decisions": 2,
+        "existing_actions": 5,
+        "existing_risks": 1
+      },
+      "error": null
+    },
+    {
+      "meeting_id": "af1d127d-fab9-4ae7-ad33-71bdf4a0b3cc",
+      "meeting_title": "Project Discussion",
+      "scores": {
+        "json_ok": true,
+        "elapsed": 17.146093130111694,
+        "entity_count": 6,
+        "persons": 2,
+        "decisions": 1,
+        "action_items": 2,
+        "risks": 0,
+        "has_quotes": 3,
+        "quote_rate": 100.0,
+        "existing_decisions": 4,
+        "existing_actions": 9,
+        "existing_risks": 6
+      },
+      "error": null
+    }
+  ]
+}
