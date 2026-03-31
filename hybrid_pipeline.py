@@ -442,7 +442,7 @@ def structure_with_llm(
 
         prompt = f"""Extract decisions, action items, and risks from these meeting utterances.
 
-Known participants: {persons_list}
+Meeting participants (speakers): {persons_list}
 
 EXAMPLE:
 Input: "Alice: I think we should use the new framework.\nBob: Agreed, let's go with React.\nAlice: Bob, can you set up the repo by Friday?\nBob: Sure. My concern is we might not have enough time for testing."
@@ -453,8 +453,11 @@ Output:
 "risks": [{{"description": "Might not have enough time for testing", "raised_by": "Bob", "severity": "medium", "source_quote": "My concern is we might not have enough time for testing"}}]}}
 
 ATTRIBUTION RULES:
+- owner, made_by, raised_by MUST be a meeting participant listed above. NEVER attribute to people only mentioned in conversation.
 - made_by = the person who ANNOUNCES or FORMULATES the decision ("Let's go with X" / "OK we'll do X")
 - owner = the person who is ASKED to do the task, NOT the person asking. If Alice says "Bob, can you do X?" then owner is Bob, not Alice.
+- If a participant says "I'll reach out to [someone not in meeting]", the owner is the PARTICIPANT, not the person being contacted.
+- SELF-ASSIGNMENTS ARE ACTION ITEMS: "I'll", "Let me", "I need to", "I can", "I'll send", "I'll talk to" = action item with THAT speaker as owner. Do NOT skip these.
 - raised_by = the person who VOICES the concern
 - source_quote = EXACT words copied from the text above. Do NOT paraphrase or invent quotes.
 
@@ -475,6 +478,7 @@ Only include items clearly stated in the text."""
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.1,
+                max_tokens=4096,
             )
             text = response.choices[0].message.content
             parsed = _parse_json_response(text)
@@ -615,6 +619,134 @@ def _merge_person_names(persons: set[str]) -> set[str]:
         if not already_covered:
             merged.add(name.strip())
     return merged
+
+
+def _validate_action_owners(next_steps: list[dict], speakers: set[str], utterances: list[dict]) -> list[dict]:
+    """Ensure action item owners are actual meeting participants, not just mentioned people.
+
+    If an owner is not a speaker, try to find the speaker who committed to the
+    action from the surrounding utterances.  Falls back to the speaker who was
+    talking when the action was discussed.
+    """
+    speakers_lower = {s.lower(): s for s in speakers}
+
+    def _match_speaker(name: str) -> str | None:
+        """Fuzzy-match a name against the speakers set."""
+        if not name:
+            return None
+        name_lower = name.lower().strip()
+        # Exact match
+        if name_lower in speakers_lower:
+            return speakers_lower[name_lower]
+        # Partial match: "Carlos" matches "Carlos Ruiz"
+        for sl, original in speakers_lower.items():
+            if name_lower in sl or sl in name_lower:
+                return original
+        return None
+
+    def _find_committer(description: str) -> str | None:
+        """Search utterances for who actually committed to this task."""
+        desc_lower = description.lower()
+        # Look for utterances where a speaker uses commitment language about this topic
+        desc_words = set(desc_lower.split())
+        best_speaker = None
+        best_overlap = 0
+        for u in utterances:
+            text_lower = u.get("text", "").lower()
+            speaker = u.get("speaker", "")
+            if not speaker or not _match_speaker(speaker):
+                continue
+            # Check if this utterance discusses the same topic
+            text_words = set(text_lower.split())
+            overlap = len(desc_words & text_words)
+            if overlap > best_overlap and overlap >= 3:
+                best_overlap = overlap
+                best_speaker = _match_speaker(speaker)
+        return best_speaker
+
+    validated = []
+    for ns in next_steps:
+        owner = ns.get("owner", "")
+        matched = _match_speaker(owner)
+        if matched:
+            ns["owner"] = matched
+        elif owner and owner != "Unassigned":
+            # Owner is not a participant — try to find who actually committed
+            committer = _find_committer(ns.get("description", ""))
+            if committer:
+                ns["description"] = f"{ns.get('description', '')} (involving {owner})"
+                ns["owner"] = committer
+            else:
+                # Last resort: mark as unassigned with note
+                ns["description"] = f"{ns.get('description', '')} (involving {owner})"
+                ns["owner"] = "Unassigned"
+            logger.info("Owner validation: '%s' is not a participant, reassigned to '%s'", owner, ns["owner"])
+        validated.append(ns)
+    return validated
+
+
+def _correct_names_in_output(output: dict, known_names: set[str]) -> dict:
+    """Fix hallucinated names in all text fields by matching against known names.
+
+    The LLM sometimes invents last names (e.g. "Marcus Ruiz" when only "Marcus"
+    is in the transcript).  This function finds name-like references in text
+    fields and replaces them with the closest known name.
+    """
+    if not known_names:
+        return output
+
+    known_lower = {n.lower(): n for n in known_names}
+
+    def _best_match(name: str) -> str | None:
+        name_lower = name.lower().strip()
+        if name_lower in known_lower:
+            return known_lower[name_lower]
+        # Check if any known name is a substring or vice versa
+        for kl, original in known_lower.items():
+            if name_lower in kl or kl in name_lower:
+                return original
+        return None
+
+    def _fix_names_in_text(text: str) -> str:
+        """Replace hallucinated full names with known names in free text."""
+        import re
+        # Find capitalized name patterns (First Last)
+        name_pattern = re.compile(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b')
+        for match in name_pattern.finditer(text):
+            candidate = match.group(0)
+            # Check if this exact name is known
+            if candidate.lower() in known_lower:
+                continue  # Already correct
+            # Check if part of it matches a known name (hallucinated last name)
+            first_name = candidate.split()[0]
+            matched = _best_match(first_name)
+            if matched and matched.lower() != candidate.lower():
+                # The first name matches but the full name doesn't — hallucinated
+                text = text.replace(candidate, matched)
+                logger.info("Name correction: '%s' → '%s'", candidate, matched)
+        return text
+
+    # Fix names in topics
+    for topic in output.get("topics", []):
+        if "summary" in topic:
+            topic["summary"] = _fix_names_in_text(topic["summary"])
+
+    # Fix names in details
+    for detail in output.get("details", []):
+        if "content" in detail:
+            detail["content"] = _fix_names_in_text(detail["content"])
+
+    # Fix owner names in next_steps
+    for ns in output.get("next_steps", []):
+        owner = ns.get("owner", "")
+        if owner:
+            matched = _best_match(owner)
+            if matched:
+                ns["owner"] = matched
+        if "description" in ns:
+            ns["description"] = _fix_names_in_text(ns["description"])
+
+    return output
 
 
 def _deduplicate_items(items: list, key_fn, threshold: float = 0.85, owner_fn=None) -> list:
@@ -761,7 +893,7 @@ def _synthesize_next_steps(next_steps: list[dict], llm_call, persons_list: str) 
 
     prompt = f"""Review these meeting action items and clean them up.
 
-Participants: {persons_list}
+Meeting participants (people who spoke): {persons_list}
 
 RAW ACTION ITEMS:
 {items_text}
@@ -770,8 +902,10 @@ Remove items that:
 1. Were already resolved during the meeting (e.g. "estimate effort for options" when a decision was already made)
 2. Are duplicates of other items (keep the more specific one)
 3. Are not actual commitments (just discussion or observations)
+4. Have an owner who is NOT a meeting participant — these are people only mentioned in discussion, not present
 
 Merge items that describe the same task for the same person.
+If an item involves contacting a non-participant, the owner is the PARTICIPANT who committed to doing the outreach.
 
 Return JSON: {{"next_steps": [{{"owner": "person", "action_label": "2-3 word label", "description": "what to do"}}]}}
 
@@ -788,6 +922,81 @@ Keep all genuine action items. Only remove items that are clearly wrong or super
 
     return next_steps
 
+
+def _extract_recap_utterances(utterances: list[dict], speakers: set[str]) -> list[dict]:
+    """Find utterances that are recap/summary sections of the meeting."""
+    recaps = []
+    for u in utterances:
+        text_lower = u.get("text", "").lower()
+        speaker = u.get("speaker", "")
+        # Count how many OTHER speakers are mentioned by first name
+        other_mentioned = sum(
+            1 for s in speakers
+            if s.lower() != speaker.lower() and s.lower().split()[0] in text_lower
+        )
+        recap_signals = any(w in text_lower for w in [
+            "recap", "let me see", "let me summarize", "action items",
+            "to summarize", "so to recap", "what i have",
+            "anything i'm missing", "anything i missed",
+        ])
+        if other_mentioned >= 2 and recap_signals:
+            recaps.append(u)
+    return recaps
+
+
+def _validate_completeness_from_recap(
+    next_steps: list[dict],
+    utterances: list[dict],
+    speakers: set[str],
+    llm_call,
+    speakers_list: str,
+) -> list[dict]:
+    """Use recap sections to find action items the main extraction missed.
+
+    The meeting leader's recap is a natural checklist — compare it against
+    extracted items and ask the LLM to fill gaps.
+    """
+    recaps = _extract_recap_utterances(utterances, speakers)
+    if not recaps:
+        return next_steps
+
+    recap_text = "\n".join(
+        f"{u.get('speaker', 'Unknown')}: {u.get('text', '')}" for u in recaps
+    )
+    existing_text = "\n".join(
+        f"- [{ns.get('owner', '?')}] {ns.get('action_label', '')}: {ns.get('description', '')}"
+        for ns in next_steps
+    )
+
+    prompt = f"""A meeting leader recapped the action items at the end of the meeting.
+Compare the recap against the already-extracted action items and find any MISSING ones.
+
+Meeting participants: {speakers_list}
+
+RECAP FROM MEETING:
+{recap_text}
+
+ALREADY EXTRACTED ACTION ITEMS:
+{existing_text}
+
+Find action items mentioned in the recap that are NOT covered by the extracted list above.
+Only return MISSING items. Do NOT repeat items already extracted.
+Owners MUST be meeting participants.
+Self-assignments ("I'll do X") count as action items — the speaker is the owner.
+
+Return JSON: {{"missing_next_steps": [{{"owner": "person", "action_label": "2-3 word label", "description": "what to do"}}]}}
+If nothing is missing, return: {{"missing_next_steps": []}}"""
+
+    try:
+        result = llm_call(prompt)
+        missing = result.get("missing_next_steps", [])
+        if missing:
+            logger.info("Recap validator found %d missing action items", len(missing))
+            next_steps.extend(missing)
+    except Exception:
+        logger.exception("Recap completeness check failed")
+
+    return next_steps
 
 
 def _merge_similar_topics(topics: list[dict]) -> list[dict]:
@@ -838,7 +1047,8 @@ def _merge_similar_topics(topics: list[dict]) -> list[dict]:
 
 def assemble_narrative_output(
     utterances: list[dict],
-    all_persons: set[str],
+    speakers: set[str],
+    mentioned_persons: set[str] = None,
     provider: str = None,
     entity_callback: callable = None,
 ) -> dict:
@@ -849,22 +1059,45 @@ def assemble_narrative_output(
     llm_url = os.getenv("LOCAL_LLM_URL", "http://localhost:1234")
     llm_model = os.getenv("LOCAL_LLM_MODEL", "qwen2.5-7b-instruct")
 
-    all_persons = _merge_person_names(all_persons)
-    persons_list = ", ".join(sorted(all_persons))
+    speakers = _merge_person_names(speakers)
+    mentioned_persons = _merge_person_names(mentioned_persons or set())
+    # Remove speakers from mentioned (in case of overlap)
+    mentioned_only = mentioned_persons - speakers
+    speakers_list = ", ".join(sorted(speakers))
+    mentioned_list = ", ".join(sorted(mentioned_only)) if mentioned_only else "none"
 
     # Build full transcript text for the LLM (grouped by topic segments)
+    # Detect recap sections: a single speaker listing multiple people's tasks
     transcript_lines = []
     for u in utterances:
         speaker = u.get("speaker", "Unknown")
         ts = u.get("timestamp", "")
         text = u.get("text", "")
         ts_prefix = f"({ts}) " if ts else ""
-        transcript_lines.append(f"{ts_prefix}{speaker}: {text}")
+        line = f"{ts_prefix}{speaker}: {text}"
+
+        # Heuristic: recap utterances mention 2+ other speakers by name and use
+        # recap language.  Tag them so the LLM doesn't re-extract action items.
+        text_lower = text.lower()
+        other_speakers_mentioned = sum(
+            1 for s in speakers if s.lower() != speaker.lower() and s.lower().split()[0] in text_lower
+        )
+        recap_signals = any(w in text_lower for w in [
+            "recap", "let me see", "let me summarize", "action items",
+            "to summarize", "so to recap", "what i have",
+            "anything i'm missing", "anything i missed",
+        ])
+        if other_speakers_mentioned >= 2 and recap_signals:
+            line = f"[RECAP - do not extract new action items from this] {line}"
+
+        transcript_lines.append(line)
 
     full_text = "\n".join(transcript_lines)
 
-    # Chunk if too long (>3000 chars per LLM call)
-    max_chunk = 4000
+    # Chunk if too long — larger chunks = fewer duplicates and better coherence.
+    # 12K chars ≈ 3-4K tokens, fits well in 16K context with room for prompt+output.
+    # Most 30-min meetings fit in 1-2 chunks instead of 7.
+    max_chunk = int(os.getenv("LLM_CHUNK_SIZE", "12000"))
     if len(full_text) > max_chunk:
         # Process in chunks, then synthesize
         chunks = []
@@ -903,13 +1136,15 @@ def assemble_narrative_output(
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.1,
+                max_tokens=4096,
             )
             return _parse_json_response(response.choices[0].message.content)
 
     for i, chunk in enumerate(chunks):
         prompt = f"""Analyze this meeting transcript segment and extract:
 
-Participants: {persons_list}
+Meeting participants (people who spoke): {speakers_list}
+Other people mentioned but NOT present: {mentioned_list}
 
 TRANSCRIPT:
 {chunk}
@@ -921,11 +1156,14 @@ Return JSON with:
 4. "concerns" - array of strings: anything that sounds urgent, risky, unresolved, or worth flagging for attention. Examples: active incidents, customer-impacting issues, undocumented systems, security gaps, missed deadlines, compliance risks. Only include if genuinely concerning.
 
 RULES:
-- owner in next_steps = the person who must DO the task, not the person who asked for it
+- owner in next_steps MUST be a meeting participant. NEVER assign action items to people who are only mentioned but not present.
+- If a participant says "I'll talk to [non-participant]", the owner is the PARTICIPANT, not the non-participant.
+- owner = the person who must DO the task, not the person who asked for it
+- SELF-ASSIGNMENTS ARE ACTION ITEMS: When a participant says "I'll", "Let me", "I need to", "I can", "I'll reach out", "I'll set up", "I'll send", "I'll talk to" — that IS an action item with THAT participant as owner. Do NOT skip these.
 - For topics, capture WHAT was decided and WHY, not just what was discussed
 - For details, write flowing narrative paragraphs, not bullet points
 - Include timestamps from the transcript in parentheses within the narrative
-- Only include genuine commitments in next_steps, not general discussion"""
+- Only include genuine commitments in next_steps, not general discussion or observations"""
 
         try:
             result = llm_call(prompt)
@@ -957,7 +1195,7 @@ RULES:
         try:
             summary_result = llm_call(
                 f"Write ONE sentence summarizing a meeting that covered these topics: {', '.join(topic_names)}. "
-                f"Participants: {persons_list}. Return JSON: {{\"summary\": \"one sentence\", \"title\": \"3-6 word meeting title\"}}"
+                f"Participants: {speakers_list}. Return JSON: {{\"summary\": \"one sentence\", \"title\": \"3-6 word meeting title\"}}"
             )
             summary = summary_result.get("summary", "")
             title = summary_result.get("title", "")
@@ -979,7 +1217,23 @@ RULES:
 
     # Pass 2: Synthesize next_steps — resolve contradictions and remove superseded items
     if deduped_next_steps and len(deduped_next_steps) > 3:
-        deduped_next_steps = _synthesize_next_steps(deduped_next_steps, llm_call, persons_list)
+        deduped_next_steps = _synthesize_next_steps(deduped_next_steps, llm_call, speakers_list)
+
+    # Pass 2.5: Use recap sections to find missing action items
+    deduped_next_steps = _validate_completeness_from_recap(
+        deduped_next_steps, utterances, speakers, llm_call, speakers_list
+    )
+
+    # Pass 3: Validate owners — ensure all owners are actual participants (code check, not LLM)
+    deduped_next_steps = _validate_action_owners(deduped_next_steps, speakers, utterances)
+
+    # Pass 4: Final dedup after synthesis (catches recap-generated duplicates)
+    deduped_next_steps = _deduplicate_items(
+        deduped_next_steps,
+        lambda ns: ns.get("description", ""),
+        0.35,  # Lower threshold after synthesis — catch near-dupes
+        lambda ns: ns.get("owner", ""),
+    )
 
     # Sort and merge details by timestamp
     all_details = _merge_details(all_details)
@@ -987,11 +1241,11 @@ RULES:
     # Calculate duration from timestamps in utterances
     duration = _estimate_duration(utterances)
 
-    return {
+    result = {
         "meeting_metadata": {
             "title": title,
             "date_mentioned": None,
-            "participants": sorted(all_persons),
+            "participants": sorted(speakers),
             "duration_estimate": duration,
         },
         "summary": summary,
@@ -1000,6 +1254,12 @@ RULES:
         "details": all_details,
         "trust_flags": list(set(all_concerns)),  # Deduplicated LLM-identified concerns
     }
+
+    # Pass 5: Correct hallucinated names across all output fields
+    all_known = speakers | mentioned_only
+    result = _correct_names_in_output(result, all_known)
+
+    return result
 
 
 def assemble_output(
@@ -1185,12 +1445,11 @@ def run_hybrid_pipeline(
 
     output = assemble_narrative_output(
         flagged,
-        all_known_names,  # LLM sees all names for attribution
+        speakers=speakers,
+        mentioned_persons=gliner_persons,
         provider=provider,
         entity_callback=entity_callback,
     )
-    # But participant list only includes actual speakers
-    output["meeting_metadata"]["participants"] = sorted(speakers)
 
     elapsed = time.time() - start_time
     if progress_callback:

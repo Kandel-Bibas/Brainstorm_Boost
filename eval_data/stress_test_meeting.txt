@@ -1,0 +1,416 @@
+David Kim  0:00
+Alright um let's just go ahead and get started, I think we're waiting on Rachel but she texted me she's like five minutes out so. OK so today we've got a bunch of stuff to cover, uh the sprint review, the customer feedback from the Meridian pilot, and then Marcus wanted us to talk about the hiring situation but he's not here so we'll see if we get to that.
+
+Jenna Torres  0:22
+Wait are we recording this? Because last time we forgot and then Linda asked for the notes and nobody had them and it was a whole thing.
+
+David Kim  0:30
+Yeah it should be, I hit record. Um OK so first thing, sprint review. Jenna where are we on the authentication rewrite?
+
+Jenna Torres  0:40
+So um basically we're like, I'd say seventy percent done? The the main OAuth flow is working, we got Google and Microsoft both hooked up, but the uh the SAML integration for enterprise clients is being a pain. I was talking to Greg about it yesterday and he said that the the IdP metadata parsing is like way more complicated than we thought because every provider does it differently.
+
+David Kim  1:08
+Greg from Okta or Greg on our team?
+
+Jenna Torres  1:11
+Greg on our team, Greg Patterson. He's been the one doing most of the SAML work. And he said he talked to someone at Okta, I think her name was um, Nadia? Nadia something. And she said that even their own SDK has like forty edge cases for metadata parsing so.
+
+David Kim  1:30
+OK so what's the timeline looking like? Because honestly Karen has been asking me every day about this. She told the board we'd have SSO ready by end of Q2 and I don't, I mean that's like eight weeks away.
+
+Jenna Torres  1:45
+I mean I think we can make it if we scope down. Like if we just do SAML for Okta and Azure AD and punt on the other providers, that covers like ninety percent of our enterprise pipeline. The weird ones like PingFederate and whatever, we can do those in Q3.
+
+Carlos Ruiz  2:05
+Sorry can I jump in? So I've been looking at this from the infrastructure side and there's another issue which is that the session management for SSO is completely different from what we have now. Right now we're doing JWTs with like a twenty-four hour expiry and that's fine for password auth, but with SSO you need to respect the IdP's session lifetime and handle single logout and all that. So it's not just the auth flow, it's the whole session layer.
+
+David Kim  2:35
+OK so that's, that sounds like more work. How much more work?
+
+Carlos Ruiz  2:40
+Um I'd say like, I don't know, two weeks? Maybe three? It depends on whether we want to do it right or do it quick. Like we could just, we could hack something where we just ignore the IdP session and keep our own, but then when IT admins revoke access in Okta it won't actually kick people out of our app immediately and that's like, that's a security thing that enterprise customers are definitely going to ask about.
+
+Jenna Torres  3:08
+Yeah Samantha from ClearView, she specifically asked about that in the demo last week. She was like "if I terminate an employee, how fast are they locked out" and I kind of dodged the question honestly.
+
+David Kim  3:22
+OK yeah we need to do it right then. Um, Carlos can you write up what the session changes look like and send it to me and Jenna by, when, Thursday?
+
+Carlos Ruiz  3:33
+Yeah I can do that.
+
+David Kim  3:36
+OK. Moving on, um, so the Meridian pilot. Has anyone talked to their team recently? Because I got a weird email from Patricia, uh Patricia Fernandez, their VP of ops, and she was saying something about data accuracy issues but she was super vague about it.
+
+Carlos Ruiz  3:56
+I haven't talked to them since the kickoff. Wasn't Amanda supposed to be the point of contact for that?
+
+Jenna Torres  4:02
+Yeah Amanda's been handling it but she's on PTO this week and next week, she's in Portugal or something. She told me before she left that things were going fine but that was like two weeks ago so.
+
+David Kim  4:15
+OK that's not great. So nobody's been talking to our biggest pilot customer for two weeks? Can someone, like can one of you reach out to Patricia and just do a check-in? Because if they're having data accuracy issues that's like, that could kill the whole deal.
+
+Jenna Torres  4:32
+I can do it but I don't really know the specifics of their setup. Like I don't know what data sources they connected or what reports they're running. Amanda had all of that in her head apparently, which is um, that's a whole other problem.
+
+David Kim  4:48
+Yeah we need to fix that too. Can you, OK so action item, Jenna reach out to Patricia Fernandez at Meridian, just introduce yourself, say Amanda's out, ask if there's anything urgent. And then separately we need Amanda to document the entire Meridian setup when she gets back. I'll send her an email about that.
+
+Jenna Torres  5:10
+OK yeah I'll email Patricia today.
+
+David Kim  5:14
+Alright um, what else on Meridian. Oh, so their contract renewal is coming up in June and the pricing discussion is going to be interesting because, so Robert, Robert Chang who's our head of sales, he wants to bump them from the pilot rate to full price which is like a three X increase and I personally think that's insane given that they've been finding bugs for us essentially.
+
+Carlos Ruiz  5:40
+Wait three X? Didn't they sign at like fifty K? So we're going to ask them for one fifty?
+
+David Kim  5:46
+Yeah per year. And I've told Robert I think we should do like a graduated thing, maybe one point five X this year and then full price next year, but he's very, he's very focused on ARR numbers right now because of the fundraise. Which I get but like, losing Meridian would be way worse than the revenue difference.
+
+Jenna Torres  6:08
+Can we talk to Emily about this? Emily Chen, the CFO? Because she usually has a more nuanced take on pricing than Robert does. No offense to Robert.
+
+David Kim  6:18
+Yeah I've got a one-on-one with Emily on Friday, I'll bring it up. OK so let's move on to, uh, actually wait. Carlos you had something about the infrastructure costs?
+
+Carlos Ruiz  6:30
+Oh yeah so um. This is kind of related to the Meridian thing actually. So I was reviewing our AWS bill and it's um, it's gone up like forty percent month over month and most of it is the RDS instance because when we onboarded Meridian we had to bump it to, I think it's an r6g.2xlarge now? Which is like, I don't remember exactly but it's expensive. And the thing is we're only at like fifteen percent utilization on it. The spike was because of that one batch import they did in January and we never scaled it back down.
+
+David Kim  7:08
+So can we just scale it back down?
+
+Carlos Ruiz  7:11
+Yeah but like, it requires downtime and we need to coordinate with Meridian because they do their batch imports on Sunday nights and if we scale down too much the import might fail or take forever. I need to figure out what the right size is. I was thinking of asking Dennis, Dennis Park, he's the DBA at my old company and he's really good at this stuff, if he'd do a quick consult.
+
+David Kim  7:35
+Is that, I mean is that something we want to pay for? We're trying to cut costs.
+
+Carlos Ruiz  7:40
+He'd probably do it for like, I don't know, a case of beer honestly. We're friends. But yeah I can also just figure it out myself it'll just take longer.
+
+David Kim  7:50
+OK why don't you take a crack at it first and if you get stuck we can talk about bringing Dennis in. But I want the RDS right-sized by end of next week, is that doable?
+
+Carlos Ruiz  8:00
+Yeah, yeah I think so. I'll look at the CloudWatch metrics and figure out the actual peak usage and go from there.
+
+David Kim  8:08
+Cool. Alright so um, oh Rachel you're here, great. We were just talking about the Meridian pilot and infrastructure costs. We're moving on to, uh, I think we should talk about the product roadmap because I had a really interesting conversation with Nathan yesterday.
+
+Rachel Okafor  8:28
+Sorry I'm late, my kid's daycare called. Um, which Nathan? Nathan from the advisory board?
+
+David Kim  8:35
+No, Nathan Weiss, the product consultant that the board brought in. So he had this idea about, and I'm not sure how I feel about it honestly, but he wants us to add like an AI layer, like a copilot thing, on top of the analytics dashboard. Where users can ask questions in natural language and it generates the charts and insights for them.
+
+Jenna Torres  8:58
+I mean that's, like everybody's doing that right now. It feels a little, I don't know, bandwagony? And also our analytics aren't even that good yet, like the dashboard still has those weird rendering bugs that Tom reported last week.
+
+Rachel Okafor  9:15
+Wait what rendering bugs? Is that the thing where the bar charts overlap when you have more than like twelve categories?
+
+Jenna Torres  9:22
+Yeah and also the date picker doesn't work in Safari which is, I mean that's embarrassing. Um anyway Tom filed issues for both of those. Tom Nguyen, not Tom Bradley.
+
+David Kim  9:35
+OK so we've got bugs to fix. But the AI copilot thing, I don't think we can ignore it entirely because the board is excited about it and frankly it could be a differentiator if we do it right. Nathan was saying we could use, um, I think he said Claude or GPT-4 or whatever, and hook it up to our data layer so it can query directly.
+
+Carlos Ruiz  10:00
+That's a massive security concern. Like, we're going to let an LLM write SQL queries against production data? What happens when it hallucinates a query that drops a table or something?
+
+David Kim  10:13
+Well obviously we'd have guardrails, like read-only access and query validation and all that.
+
+Rachel Okafor  10:20
+I've actually done some research on this because I was curious. So there's a company called, um, I forget the name but Jessica Lin from my YC batch started it, they do like sandboxed query execution for exactly this use case. Let me find the name and send it to the group.
+
+David Kim  10:38
+Yeah please do. OK so the AI copilot, let's not decide anything today but I want everyone to think about it and we'll do a deeper dive next week. Maybe invite Nathan to that meeting. And also invite Tony, Tony Park from engineering, because he's been playing around with LLM APIs on his own time and he might have some good input.
+
+Jenna Torres  11:00
+Sounds good. Can we talk about the hiring situation? I know Marcus isn't here but it kind of affects all of us because we're drowning.
+
+David Kim  11:10
+Yeah. So the situation is we have two open reqs, one for a senior backend engineer and one for a frontend person. HR, specifically Diane Thompson, has been screening resumes but the quality has been really low. Like I looked at the last batch she sent over and I don't think any of them had relevant experience. No offense to Diane but I think the job descriptions need work.
+
+Rachel Okafor  11:36
+I can help rewrite the JDs. I did that at my last company and we saw like a big improvement in applicant quality. The trick is to be super specific about the tech stack and the actual problems they'll work on, not just list requirements.
+
+David Kim  11:50
+That would be great actually. Can you do that this week?
+
+Rachel Okafor  11:54
+Yeah. I'll need to talk to Marcus about what he specifically wants for the backend role though because I'm not sure if he's looking for more of a systems person or more of an API person.
+
+David Kim  12:05
+OK reach out to Marcus directly, he should be available even though he's not in this meeting, he had a dentist appointment or something. Alright um, what else. Oh, the customer feedback survey. So Priya, wait Priya's not here is she?
+
+Jenna Torres  12:22
+No she's on the Horizon team now, remember? She moved over last month.
+
+David Kim  12:27
+Oh right right. OK so who's handling the customer feedback survey then? Because Priya was running that before she moved.
+
+Carlos Ruiz  12:35
+I think nobody? Like I think it just fell through the cracks when she moved. I saw the survey is still live but nobody's looked at the responses in at least three weeks.
+
+David Kim  12:45
+That's, OK that's bad. Rachel can you pick that up? Just look at the responses, summarize the main themes, and bring it to next week's meeting?
+
+Rachel Okafor  12:55
+Sure. Is it in Typeform or Google Forms or what?
+
+Carlos Ruiz  13:00
+Typeform. I can send you the login, Priya gave it to me a while back but I'm not sure if the password still works. Actually, do you know if Miguel set up the shared credentials thing? Miguel Santos from IT?
+
+Rachel Okafor  13:14
+No idea. I'll ask around.
+
+David Kim  13:18
+OK. Let's see what else. Oh, the API rate limiting issue. So we got an email from, I think it was from the CTO of Pinnacle, what's his name, um, Victor? Victor Huang. And he's saying our API is returning 429s when they do their nightly sync and it's blocking their whole pipeline. And apparently his team has been reaching out to support for two weeks and nobody responded.
+
+Jenna Torres  13:48
+Wait what? Two weeks with no response? That's, who's handling support tickets right now?
+
+David Kim  13:55
+It's supposed to be, um, we have that shared inbox right? support@, and I think it's supposed to be whoever's on rotation. But I don't think we ever actually set up a rotation after Alex left. Alex Rivera, the support engineer.
+
+Carlos Ruiz  14:12
+Yeah no, there's no rotation. I've been checking it occasionally but like, not consistently. And honestly half the emails in there are spam.
+
+David Kim  14:22
+OK this is, this is really bad. We can't have a customer's CTO emailing me directly because nobody answered support tickets for two weeks. Um, OK, short term, Carlos can you go through the support inbox today and triage everything? And long term we need to figure out a real support process. Maybe that's something Marcus should own since he's hiring.
+
+Carlos Ruiz  14:45
+Yeah I'll do the triage today. But the rate limiting thing specifically, that's a real issue. Our rate limits are set at like a hundred requests per minute per API key and Pinnacle is doing like, their sync hits us with thousands of requests. We either need to bump their rate limit or give them a bulk endpoint.
+
+David Kim  15:06
+What would you recommend?
+
+Carlos Ruiz  15:09
+Honestly a bulk endpoint is the right solution long-term because other customers are going to have the same problem. But short term I can just whitelist their API key to have a higher limit. That's like a five minute fix.
+
+David Kim  15:22
+Do the whitelist now, today, so they're unblocked. And then let's put the bulk endpoint on the roadmap. Can you send Victor an email too, just apologize for the delay and let him know we're fixing it?
+
+Carlos Ruiz  15:35
+Yeah will do.
+
+Jenna Torres  15:38
+Actually speaking of the API, Liam, Liam O'Brien from DevRel, he was asking me about API documentation. He wants to do a blog post about our API but he says the docs are like six months out of date and half the endpoints aren't even documented.
+
+David Kim  15:55
+Yeah that's true, they're bad. But I don't think we can prioritize that right now. Tell Liam we'll get to it, maybe, I don't know, maybe he can help update them himself? He's technical enough.
+
+Rachel Okafor  16:08
+I actually think API docs should be higher priority than you're giving it. Like if we're trying to grow the developer ecosystem, having bad docs is basically a wall. I was talking to Christine, Christine Park at Stripe, and she said they attribute like thirty percent of their developer adoption to documentation quality.
+
+David Kim  16:28
+That's a fair point. OK let me think about that. We don't have bandwidth right now but maybe we can find a technical writer on contract. Actually, does anyone know if Liz is still doing freelance? Liz Monroe, she used to write docs for us.
+
+Carlos Ruiz  16:45
+I think she went full-time at Datadog. But I could be wrong.
+
+David Kim  16:50
+OK I'll reach out to her and see. Alright, we're getting long. Um, one more thing. The security audit. So we got the results back from the pentest that WhiteHat, the security firm, did last month. And um, there's some stuff in there that's not great. They found like, there's a SQL injection vulnerability in the search endpoint, which is like, that's bad. And there's some XSS stuff in the dashboard.
+
+Jenna Torres  17:20
+Wait the search endpoint? Is that the one I wrote? Because I thought I was using parameterized queries everywhere.
+
+David Kim  17:28
+I don't know who wrote it, we can look at git blame later. But the point is we need to fix these before we can close the SOC 2 audit and Karen is, like I said, Karen Wang the CEO is very focused on getting SOC 2 done because three enterprise deals are contingent on it.
+
+Rachel Okafor  17:48
+How many findings were there total?
+
+David Kim  17:51
+Um, I think twelve? But only three are critical. The SQL injection, the XSS, and there's something about our JWT secret being hardcoded in the repo, which is um yeah.
+
+Carlos Ruiz  18:05
+That's, wait the JWT secret is in the repo? Like in git history?
+
+David Kim  18:10
+Yeah apparently it was committed back in like, I don't know, early development. We've rotated it since then obviously but it's still in the git history. The recommendation is to rotate all secrets and consider the repo history compromised.
+
+Carlos Ruiz  18:25
+Do we need to do a git filter-branch or something? Because that's going to mess up everyone's local branches.
+
+David Kim  18:32
+Let's talk about that offline because it's complicated. The priority is fixing the three critical findings. Um, Jenna can you take the SQL injection and XSS ones? And Carlos can you handle the secrets rotation?
+
+Jenna Torres  18:45
+Yeah. When do we need these done by?
+
+David Kim  18:48
+The SOC 2 auditor, I think his name is Richard, Richard Stein, he's coming back in three weeks to do the recheck. So we need everything fixed and verified before then. Let's say two weeks to be safe.
+
+Rachel Okafor  19:00
+Should we also do our own security review of the rest of the codebase? Like if there's SQL injection in search, there might be similar issues in other endpoints.
+
+David Kim  19:12
+Yeah that's a good point. Can you do a sweep? Just look at all the database queries and make sure they're all parameterized.
+
+Rachel Okafor  19:20
+Sure. I'll use semgrep or something to automate part of it.
+
+David Kim  19:25
+Great. OK, uh, let me see my notes. Oh, so two more quick things. First, the office situation. So we've been going back and forth about whether to renew the lease. The current one expires in August and uh, I talked to Barbara, Barbara Kim from our real estate broker, and she said the landlord wants a fifteen percent increase. Given that half the team is remote anyway I'm not sure it makes sense.
+
+Carlos Ruiz  19:52
+I mean I come in like twice a week. Jenna you're fully remote right?
+
+Jenna Torres  19:57
+Yeah I haven't been to the office in like two months.
+
+Rachel Okafor  20:02
+I come in occasionally but mostly for meetings that I could do on Zoom anyway. I think we could probably go fully remote and just do like a coworking space for when people need to meet in person.
+
+David Kim  20:15
+Yeah that's kind of what I'm thinking. I'll talk to Marcus and Emily about it and we'll decide by end of April. If anyone has strong feelings about keeping the office let me know.
+
+David Kim  20:28
+OK second quick thing. The demo for General Morrison at DOD, uh, so Jake, Jake Williams who handles our government contracts, he told me we got invited to do a demo for some people at DOD. It's not a commitment or anything but if it goes well it could be a big deal. The demo is in six weeks and we need to have the product looking really polished. Like, the rendering bugs Jenna mentioned, those need to be fixed. And we need the SSO working because they're going to ask about it.
+
+Jenna Torres  21:00
+Six weeks for SSO plus bug fixes plus making everything look polished? That's, I mean we can try but like, Greg's already behind on SAML and we haven't even started the session management stuff Carlos was talking about.
+
+Carlos Ruiz  21:16
+And there's the security fixes too. That's two weeks right there.
+
+David Kim  21:22
+I know it's a lot. But this could be huge, like we're talking potentially millions in contract value. I think we need to talk to Marcus about priorities and maybe bring on a contractor for some of the frontend polish work. Rachel do you know anyone?
+
+Rachel Okafor  21:38
+Um, there's this guy Daniel, Daniel Okoye, he's a freelance frontend dev I've worked with before. He's really good and he's fast. I can reach out and see if he's available.
+
+David Kim  21:50
+Please do. And see what his rate is and I'll talk to Emily about budget.
+
+Rachel Okafor  21:56
+OK cool.
+
+David Kim  22:00
+Alright um, anything else? Any blockers anyone wants to raise?
+
+Jenna Torres  22:06
+One thing, it's kind of minor but the CI pipeline has been super slow lately. Like builds that used to take five minutes are now taking twenty-five and it's killing productivity. I think it started after we added the integration test suite that, who was it, oh right Steven, Steven Park, wrote before he went on paternity leave.
+
+Carlos Ruiz  22:28
+Yeah those tests are running against a real database instance that spins up in Docker and it's really slow. I think we could parallelize them or use a test database that persists between runs instead of recreating it every time.
+
+David Kim  22:42
+Is that something you can look at Carlos? Not this week obviously, you've got enough going on, but maybe next week?
+
+Carlos Ruiz  22:50
+Yeah I'll take a look. I might also talk to our GitHub rep, uh, what's her name, Sofia, Sofia Martinez, about whether we can get larger runners. We're on the free tier runners I think.
+
+David Kim  23:04
+OK. Jenna anything else?
+
+Jenna Torres  23:08
+Nope. Oh wait actually one more thing. So the design team, well Lisa, Lisa Huang our designer, she sent me new mockups for the settings page and they're really nice but they're like a complete redesign and I don't know when we'd have time to implement them. Should I just tell her to hold off?
+
+David Kim  23:28
+Let me look at the mockups first. Can you forward them to me?
+
+Jenna Torres  23:32
+Yeah I'll send them after this.
+
+David Kim  23:35
+OK. Rachel anything from you?
+
+Rachel Okafor  23:38
+Two things actually. First, I've been working on the data export feature and I'm stuck on the CSV encoding thing. Like when customers have unicode characters in their data, the Excel import breaks because Excel defaults to, I think, Windows-1252 encoding instead of UTF-8. And apparently this has been a complaint from a couple customers, I think Ingrid from NordicTech mentioned it and also somebody from, was it Chen Wei at Dragon Analytics?
+
+David Kim  24:10
+OK that's a real bug. Is there a standard solution for this?
+
+Rachel Okafor  24:15
+Yeah you add a BOM, a byte order mark, to the beginning of the file and then Excel recognizes it as UTF-8. It's kind of dumb but it works. I just need to add like three bytes to the file header. I should have it done today.
+
+David Kim  24:30
+Great. And the second thing?
+
+Rachel Okafor  24:33
+So I was talking to Professor Harrison, uh, Sarah Harrison from MIT, she was at that conference I went to last week. And she's doing research on exactly the kind of analytics we're building. She said she'd be interested in a research partnership where her grad students could use our platform and in exchange they publish papers that reference us. Could be good PR and also free QA honestly.
+
+David Kim  24:58
+That's interesting. Let me talk to Karen and the board about it because there might be IP implications. But in principle I like it. Can you send me her contact info?
+
+Rachel Okafor  25:08
+Yeah will do.
+
+David Kim  25:12
+OK. Carlos you good?
+
+Carlos Ruiz  25:15
+Yeah um, one last thing. The monitoring. So our Datadog bill is like three grand a month now and I'm not sure we're getting that much value from it. Half the dashboards nobody looks at. I was thinking about switching to, like, a self-hosted solution. Maybe Grafana with Prometheus. But that's a project in itself.
+
+David Kim  25:38
+How much would we save?
+
+Carlos Ruiz  25:41
+The tooling would be free but I'd need probably a week to set it up and migrate everything. And there's the ongoing maintenance cost of running it ourselves. I talked to my friend, uh, Derek, Derek Nguyen, he runs infra at a startup about our size and he said they switched and it was worth it but the migration was painful.
+
+David Kim  26:02
+OK let's table that for now. Three grand a month sucks but it's not our biggest cost problem. Focus on the RDS right-sizing first because that's probably saving us more.
+
+Carlos Ruiz  26:14
+Yeah fair enough.
+
+David Kim  26:18
+Alright I think that's everything. Let me recap the action items real quick. Um, Carlos you're doing the session management writeup by Thursday, the rate limit whitelist for Pinnacle today, emailing Victor, support inbox triage today, RDS right-sizing by end of next week, and looking at CI speed next week. That's, that's a lot Carlos.
+
+Carlos Ruiz  26:42
+Yeah it's fine, the whitelist and Victor email are quick. The triage might take a while though depending on how much is in there.
+
+David Kim  26:52
+OK. Jenna, you're reaching out to Patricia at Meridian, fixing the SQL injection and XSS findings in two weeks, and forwarding Lisa's mockups to me.
+
+Jenna Torres  27:04
+Yep got it.
+
+David Kim  27:06
+Rachel, you're rewriting the job descriptions, picking up the customer feedback survey from Priya, doing the security code sweep, reaching out to Daniel about contract work, sending me Professor Harrison's info, and fixing the CSV BOM thing.
+
+Rachel Okafor  27:24
+That's also a lot but yeah OK.
+
+David Kim  27:28
+I know, everyone's overloaded, which is why we need to get these hires done. I'll work on the hiring side and talk to Emily about budget for contractors. And I'll email Amanda about documenting the Meridian setup. Anything I'm missing?
+
+Jenna Torres  27:44
+The AI copilot deeper dive next week with Nathan and Tony.
+
+David Kim  27:50
+Oh right, I'll set that up. OK. Thanks everyone. Good meeting. Let's try to knock out the critical stuff this week, especially the security fixes and the Pinnacle rate limiting.
+
+Rachel Okafor  28:02
+Sounds good.
+
+Carlos Ruiz  28:04
+Alright, later.
+
+Jenna Torres  28:06
+Bye everyone.
+
+David Kim  28:08
+Oh wait actually one more thing before everyone drops off. I forgot, the metrics review. So our MAU is flat, like we've been at around twelve thousand for three months and we're supposed to be at twenty by end of year. The board meeting is in two weeks and Karen is going to ask about growth strategy. If anyone has ideas, just slack them to me, the channel is growth-strategy. I've been talking to Philip, Philip Ortiz from the marketing agency, about a content marketing push but I don't know if that's enough.
+
+Rachel Okafor  28:42
+I think the product-led growth stuff matters more honestly. Like the free tier limitations are too restrictive, people sign up and hit a wall and churn. We should look at what Notion and Figma did with their free tiers.
+
+David Kim  28:58
+Yeah maybe. OK let's actually talk about that in the growth strategy channel, this meeting is already over time. Alright for real now, bye everyone.
+
+Carlos Ruiz  29:08
+Bye.
+
+Jenna Torres  29:10
+See ya.
+
+Rachel Okafor  29:12
+Bye.
