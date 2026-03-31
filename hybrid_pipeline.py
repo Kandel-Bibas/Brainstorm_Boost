@@ -752,17 +752,6 @@ def _merge_details(details: list[dict]) -> list[dict]:
     return merged
 
 
-_URGENCY_PATTERNS = [
-    (re.compile(r"\b(double.?charg|overcharg|billing.?error|payment.?fail)", re.IGNORECASE), "Payment/billing issue detected"),
-    (re.compile(r"\b(security|vulnerab|breach|exploit|CVE|comprom)", re.IGNORECASE), "Security concern mentioned"),
-    (re.compile(r"\b(incident|outage|down.?time|crash|p[0-2]\b)", re.IGNORECASE), "Incident/outage discussed"),
-    (re.compile(r"\b(compliance|audit|regulat|GDPR|HIPAA|SOC|PCI)", re.IGNORECASE), "Compliance/regulatory topic"),
-    (re.compile(r"\b(undocument|nobody.?document|no.?one.?document|not.?document)", re.IGNORECASE), "Undocumented system behavior flagged"),
-    (re.compile(r"\b(expir|SSL|certificate|cert.?renew)", re.IGNORECASE), "Certificate/expiration issue"),
-    (re.compile(r"\b(data.?loss|data.?leak|PII|personal.?data)", re.IGNORECASE), "Data sensitivity concern"),
-]
-
-
 def _synthesize_next_steps(next_steps: list[dict], llm_call, persons_list: str) -> list[dict]:
     """Pass 2: Review all next_steps for contradictions and superseded items."""
     items_text = "\n".join(
@@ -799,28 +788,6 @@ Keep all genuine action items. Only remove items that are clearly wrong or super
 
     return next_steps
 
-
-def _generate_trust_flags(topics: list[dict], next_steps: list[dict], details: list[dict], utterances: list[dict]) -> list[str]:
-    """Scan content for urgency patterns and generate trust flags."""
-    flags = []
-
-    # Combine all text for scanning
-    all_text = " ".join([
-        *[t.get("summary", "") for t in topics],
-        *[ns.get("description", "") for ns in next_steps],
-        *[d.get("content", "") for d in details],
-        *[u.get("text", "") for u in utterances],
-    ])
-
-    for pattern, message in _URGENCY_PATTERNS:
-        if pattern.search(all_text):
-            flags.append(message)
-
-    # Check for short meeting
-    if len(utterances) < 10:
-        flags.append("Very short transcript — extraction may be incomplete")
-
-    return flags
 
 
 def _merge_similar_topics(topics: list[dict]) -> list[dict]:
@@ -920,6 +887,7 @@ def assemble_narrative_output(
     all_topics = []
     all_next_steps = []
     all_details = []
+    all_concerns = []
 
     if provider == "gemini":
         from llm_client import generate as gemini_generate
@@ -950,6 +918,7 @@ Return JSON with:
 1. "topics" - array of {{"title": "short topic name", "summary": "1-2 sentence paragraph about what was discussed and decided on this topic"}}
 2. "next_steps" - array of {{"owner": "person name", "action_label": "2-3 word label", "description": "what they need to do, with deadline if mentioned"}}
 3. "details" - array of {{"title": "section title", "content": "narrative paragraph describing what happened, with timestamps in parentheses like (00:07:49)", "timestamp": "HH:MM:SS of when this started"}}
+4. "concerns" - array of strings: anything that sounds urgent, risky, unresolved, or worth flagging for attention. Examples: active incidents, customer-impacting issues, undocumented systems, security gaps, missed deadlines, compliance risks. Only include if genuinely concerning.
 
 RULES:
 - owner in next_steps = the person who must DO the task, not the person who asked for it
@@ -963,6 +932,7 @@ RULES:
             all_topics.extend(result.get("topics", []))
             all_next_steps.extend(result.get("next_steps", []))
             all_details.extend(result.get("details", []))
+            all_concerns.extend(result.get("concerns", []))
 
             # Stream to frontend
             if entity_callback:
@@ -1028,7 +998,7 @@ RULES:
         "topics": deduped_topics,
         "next_steps": deduped_next_steps,
         "details": all_details,
-        "trust_flags": _generate_trust_flags(deduped_topics, deduped_next_steps, all_details, utterances),
+        "trust_flags": list(set(all_concerns)),  # Deduplicated LLM-identified concerns
     }
 
 
