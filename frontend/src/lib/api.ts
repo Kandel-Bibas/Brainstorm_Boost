@@ -14,44 +14,62 @@ export interface AiOutput {
     participants: string[];
     duration_estimate: string | null;
   };
-  decisions: Array<{
+  // New Gemini-style format
+  summary?: string;
+  topics?: Array<{
+    title: string;
+    summary: string;
+  }>;
+  next_steps?: Array<{
+    owner: string;
+    action_label: string;
+    description: string;
+    deadline?: string | null;
+  }>;
+  details?: Array<{
+    title: string;
+    content: string;
+    timestamp?: string;
+  }>;
+  // Legacy D/A/R format (backward compatibility)
+  decisions?: Array<{
     id: string;
     description: string;
-    decision_type: string;
-    made_by: string;
-    confidence: 'high' | 'medium' | 'low';
-    confidence_rationale: string;
-    source_quote: string;
+    decision_type?: string;
+    made_by?: string;
+    confidence?: 'high' | 'medium' | 'low';
+    confidence_rationale?: string;
+    source_quote?: string;
     source_quote_speaker?: string;
     source_start?: number | null;
     source_end?: number | null;
   }>;
-  action_items: Array<{
+  action_items?: Array<{
     id: string;
     task: string;
     owner: string;
     deadline: string | null;
-    commitment_type: string;
-    confidence: 'high' | 'medium' | 'low';
-    confidence_rationale: string;
-    source_quote: string;
+    commitment_type?: string;
+    confidence?: 'high' | 'medium' | 'low';
+    confidence_rationale?: string;
+    source_quote?: string;
     source_quote_speaker?: string;
     source_start?: number | null;
     source_end?: number | null;
     verified?: boolean;
   }>;
-  open_risks: Array<{
+  open_risks?: Array<{
     id: string;
     description: string;
-    raised_by: string;
-    severity: 'high' | 'medium' | 'low';
-    source_quote: string;
+    raised_by?: string;
+    severity?: 'high' | 'medium' | 'low';
+    source_quote?: string;
     source_quote_speaker?: string;
     source_start?: number | null;
     source_end?: number | null;
   }>;
-  state_of_direction: string;
-  trust_flags: string[];
+  state_of_direction?: string;
+  trust_flags?: string[];
 }
 
 export const api = {

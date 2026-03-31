@@ -665,6 +665,165 @@ def _verify_quote(quote: str, utterances: list[dict]) -> bool:
     return False
 
 
+def assemble_narrative_output(
+    utterances: list[dict],
+    all_persons: set[str],
+    provider: str = None,
+    entity_callback: callable = None,
+) -> dict:
+    """Produce Gemini-style narrative output: Summary, Topics, Next Steps, Details."""
+    from openai import OpenAI
+    from llm_client import _parse_json_response
+
+    llm_url = os.getenv("LOCAL_LLM_URL", "http://localhost:1234")
+    llm_model = os.getenv("LOCAL_LLM_MODEL", "qwen2.5-7b-instruct")
+
+    all_persons = _merge_person_names(all_persons)
+    persons_list = ", ".join(sorted(all_persons))
+
+    # Build full transcript text for the LLM (grouped by topic segments)
+    transcript_lines = []
+    for u in utterances:
+        speaker = u.get("speaker", "Unknown")
+        ts = u.get("timestamp", "")
+        text = u.get("text", "")
+        ts_prefix = f"({ts}) " if ts else ""
+        transcript_lines.append(f"{ts_prefix}{speaker}: {text}")
+
+    full_text = "\n".join(transcript_lines)
+
+    # Chunk if too long (>3000 chars per LLM call)
+    max_chunk = 4000
+    if len(full_text) > max_chunk:
+        # Process in chunks, then synthesize
+        chunks = []
+        current = []
+        current_len = 0
+        for line in transcript_lines:
+            if current_len + len(line) > max_chunk and current:
+                chunks.append("\n".join(current))
+                current = [line]
+                current_len = len(line)
+            else:
+                current.append(line)
+                current_len += len(line)
+        if current:
+            chunks.append("\n".join(current))
+    else:
+        chunks = [full_text]
+
+    # Step 1: Extract topics + next steps from each chunk
+    all_topics = []
+    all_next_steps = []
+    all_details = []
+
+    if provider == "gemini":
+        from llm_client import generate as gemini_generate
+        llm_call = lambda prompt: gemini_generate(prompt, provider="gemini",
+            system_prompt="You are a meeting analyst. Produce structured meeting notes. Return valid JSON only.")
+    else:
+        client = OpenAI(base_url=f"{llm_url}/v1", api_key="lm-studio")
+        def llm_call(prompt):
+            response = client.chat.completions.create(
+                model=llm_model,
+                messages=[
+                    {"role": "system", "content": "You are a meeting analyst. Produce structured meeting notes. Return valid JSON only."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.1,
+            )
+            return _parse_json_response(response.choices[0].message.content)
+
+    for i, chunk in enumerate(chunks):
+        prompt = f"""Analyze this meeting transcript segment and extract:
+
+Participants: {persons_list}
+
+TRANSCRIPT:
+{chunk}
+
+Return JSON with:
+1. "topics" - array of {{"title": "short topic name", "summary": "1-2 sentence paragraph about what was discussed and decided on this topic"}}
+2. "next_steps" - array of {{"owner": "person name", "action_label": "2-3 word label", "description": "what they need to do, with deadline if mentioned"}}
+3. "details" - array of {{"title": "section title", "content": "narrative paragraph describing what happened, with timestamps in parentheses like (00:07:49)", "timestamp": "HH:MM:SS of when this started"}}
+
+RULES:
+- owner in next_steps = the person who must DO the task, not the person who asked for it
+- For topics, capture WHAT was decided and WHY, not just what was discussed
+- For details, write flowing narrative paragraphs, not bullet points
+- Include timestamps from the transcript in parentheses within the narrative
+- Only include genuine commitments in next_steps, not general discussion"""
+
+        try:
+            result = llm_call(prompt)
+            all_topics.extend(result.get("topics", []))
+            all_next_steps.extend(result.get("next_steps", []))
+            all_details.extend(result.get("details", []))
+
+            # Stream to frontend
+            if entity_callback:
+                entities = []
+                for ns in result.get("next_steps", []):
+                    entities.append({
+                        "type": "action_item",
+                        "content": f"[{ns.get('owner', '?')}] {ns.get('action_label', '')}: {ns.get('description', '')}",
+                        "owner": ns.get("owner"),
+                    })
+                if entities:
+                    entity_callback(entities, i, len(chunks))
+
+        except Exception:
+            logger.exception("Narrative extraction failed for chunk %d/%d", i+1, len(chunks))
+            continue
+
+    # Step 2: Generate one-line summary from topics
+    summary = ""
+    if all_topics:
+        topic_names = [t.get("title", "") for t in all_topics]
+        try:
+            summary_result = llm_call(
+                f"Write ONE sentence summarizing a meeting that covered these topics: {', '.join(topic_names)}. "
+                f"Participants: {persons_list}. Return JSON: {{\"summary\": \"one sentence\", \"title\": \"3-6 word meeting title\"}}"
+            )
+            summary = summary_result.get("summary", "")
+            title = summary_result.get("title", "")
+        except Exception:
+            summary = f"Meeting covered {', '.join(topic_names[:3])}."
+            title = topic_names[0] if topic_names else "Meeting"
+    else:
+        title = "Meeting"
+
+    # Deduplicate topics and next_steps
+    seen_topics = set()
+    deduped_topics = []
+    for t in all_topics:
+        key = t.get("title", "").lower().strip()
+        if key and key not in seen_topics:
+            seen_topics.add(key)
+            deduped_topics.append(t)
+
+    deduped_next_steps = _deduplicate_items(
+        all_next_steps,
+        lambda ns: ns.get("description", ""),
+        0.5,
+        lambda ns: ns.get("owner", ""),
+    )
+
+    return {
+        "meeting_metadata": {
+            "title": title,
+            "date_mentioned": None,
+            "participants": sorted(all_persons),
+            "duration_estimate": None,
+        },
+        "summary": summary,
+        "topics": deduped_topics,
+        "next_steps": deduped_next_steps,
+        "details": all_details,
+        "trust_flags": [],
+    }
+
+
 def assemble_output(
     extraction: ExtractionResult,
     all_persons: set[str],
@@ -826,34 +985,24 @@ def run_hybrid_pipeline(
         progress_callback("extracting_entities", 0.3, f"Found {len(all_persons)} participants")
 
     if cancel_check and cancel_check():
-        return assemble_output(ExtractionResult(), all_persons, utterances, provider)
+        return {"meeting_metadata": {"title": "Cancelled", "participants": sorted(all_persons)}, "summary": "", "topics": [], "next_steps": [], "details": [], "trust_flags": ["Analysis was cancelled"]}
 
-    # Step 4: LLM structuring (only flagged utterances)
+    # Step 4: Narrative extraction — topics, next steps, details
     if progress_callback:
-        progress_callback("structuring", 0.35, f"Structuring {len(flagged)} items with LLM...")
+        progress_callback("analyzing", 0.35, f"Analyzing {len(flagged)} key utterances...")
 
-    extraction = structure_with_llm(
+    output = assemble_narrative_output(
         flagged,
         all_persons,
         provider=provider,
         entity_callback=entity_callback,
-        cancel_check=cancel_check,
     )
-
-    logger.info("LLM extracted: %d decisions, %d action items, %d risks",
-                len(extraction.decisions), len(extraction.action_items), len(extraction.risks))
-
-    # Step 5: Assemble
-    if progress_callback:
-        progress_callback("assembling", 0.9, "Assembling final output...")
-
-    output = assemble_output(extraction, all_persons, utterances, provider)
 
     elapsed = time.time() - start_time
     if progress_callback:
         progress_callback("complete", 1.0, f"Analysis complete ({elapsed:.0f}s)")
 
-    logger.info("Hybrid pipeline complete in %.1fs: %d decisions, %d actions, %d risks",
-                elapsed, len(output["decisions"]), len(output["action_items"]), len(output["open_risks"]))
+    logger.info("Hybrid pipeline complete in %.1fs: %d topics, %d next steps, %d details",
+                elapsed, len(output.get("topics", [])), len(output.get("next_steps", [])), len(output.get("details", [])))
 
     return output

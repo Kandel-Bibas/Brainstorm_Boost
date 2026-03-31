@@ -150,7 +150,25 @@ function AnalysisPanel({ aiOutput, onQuoteClick }: {
   aiOutput: AiOutput
   onQuoteClick: (quote: string) => void
 }) {
-  const { trust_flags, state_of_direction, decisions, action_items, open_risks } = aiOutput
+  // Detect format: new (topics/next_steps) or legacy (decisions/action_items)
+  const isNewFormat = !!(aiOutput.topics || aiOutput.next_steps || aiOutput.summary)
+
+  if (isNewFormat) {
+    return <NarrativePanel aiOutput={aiOutput} onQuoteClick={onQuoteClick} />
+  }
+  return <LegacyPanel aiOutput={aiOutput} onQuoteClick={onQuoteClick} />
+}
+
+// ---------------------------------------------------------------------------
+// New Gemini-style narrative panel
+// ---------------------------------------------------------------------------
+
+function NarrativePanel({ aiOutput, onQuoteClick }: {
+  aiOutput: AiOutput
+  onQuoteClick: (quote: string) => void
+}) {
+  const { summary, topics, next_steps, details, trust_flags } = aiOutput
+  const [showDetails, setShowDetails] = useState(false)
 
   return (
     <div className="space-y-6 p-6">
@@ -168,17 +186,125 @@ function AnalysisPanel({ aiOutput, onQuoteClick }: {
         </div>
       )}
 
-      {/* State of direction */}
+      {/* Summary */}
+      {summary && (
+        <p className="text-sm text-[var(--bb-text-primary)] leading-relaxed">{summary}</p>
+      )}
+
+      {/* Topics */}
+      {topics && topics.length > 0 && (
+        <section className="space-y-4">
+          {topics.map((topic, i) => (
+            <div key={i}>
+              <h3 className="text-sm font-medium text-[var(--bb-text-primary)]">{topic.title}</h3>
+              <p className="mt-1 text-sm leading-relaxed text-[var(--bb-text-secondary)]">{topic.summary}</p>
+            </div>
+          ))}
+        </section>
+      )}
+
+      {/* Next Steps */}
+      {next_steps && next_steps.length > 0 && (
+        <section>
+          <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-[var(--bb-text-muted)]">
+            Next Steps
+          </h3>
+          <div className="space-y-2">
+            {next_steps.map((step, i) => (
+              <div
+                key={i}
+                className="flex items-start gap-3 rounded-lg border border-[var(--bb-border)] bg-[var(--bb-surface)] px-4 py-3"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-[var(--bb-text-primary)]">
+                    <span className="font-medium text-[var(--bb-accent)]">[{step.owner}]</span>
+                    {' '}
+                    <span className="font-medium">{step.action_label}:</span>
+                    {' '}
+                    {step.description}
+                  </p>
+                  {step.deadline && (
+                    <span className="mt-1 inline-block rounded bg-[var(--bb-border-light)] px-1.5 py-0.5 text-xs text-[var(--bb-text-muted)]">
+                      Due: {step.deadline}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Details (expandable) */}
+      {details && details.length > 0 && (
+        <section>
+          <button
+            type="button"
+            onClick={() => setShowDetails(!showDetails)}
+            className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-[var(--bb-text-muted)] transition-colors hover:text-[var(--bb-text-secondary)]"
+          >
+            {showDetails ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+            Details ({details.length} sections)
+          </button>
+          {showDetails && (
+            <div className="mt-3 space-y-4">
+              {details.map((detail, i) => (
+                <div key={i}>
+                  <h4 className="text-sm font-medium text-[var(--bb-text-primary)]">
+                    {detail.title}
+                  </h4>
+                  <p className="mt-1 text-sm leading-relaxed text-[var(--bb-text-secondary)]">
+                    {detail.content}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Empty state */}
+      {(!topics || topics.length === 0) && (!next_steps || next_steps.length === 0) && (
+        <div className="py-12 text-center text-sm text-[var(--bb-text-muted)]">
+          No analysis available.
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Legacy D/A/R panel (for old meetings)
+// ---------------------------------------------------------------------------
+
+function LegacyPanel({ aiOutput, onQuoteClick }: {
+  aiOutput: AiOutput
+  onQuoteClick: (quote: string) => void
+}) {
+  const { trust_flags, state_of_direction, decisions = [], action_items = [], open_risks = [] } = aiOutput
+
+  return (
+    <div className="space-y-6 p-6">
+      {trust_flags && trust_flags.length > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900/40 dark:bg-amber-950/20">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+            <div className="space-y-1">
+              {trust_flags.map((flag, i) => (
+                <p key={i} className="text-sm text-amber-800 dark:text-amber-300">{flag}</p>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {state_of_direction && (
         <p className="text-sm text-[var(--bb-text-primary)] leading-relaxed">{state_of_direction}</p>
       )}
 
-      {/* Decisions */}
       {decisions.length > 0 && (
         <section>
-          <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-[var(--bb-text-muted)]">
-            Decisions
-          </h3>
+          <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-[var(--bb-text-muted)]">Decisions</h3>
           <div className="space-y-2">
             {decisions.map((d, i) => (
               <div key={d.id} className="rounded-lg border bg-[var(--bb-surface)] px-4 py-3" style={{ borderColor: 'var(--bb-border)' }}>
@@ -188,13 +314,8 @@ function AnalysisPanel({ aiOutput, onQuoteClick }: {
                     <p className="text-sm text-[var(--bb-text-primary)]">{d.description}</p>
                     <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-[var(--bb-text-muted)]">
                       {d.made_by && <span>{d.made_by}</span>}
-                      <ConfidenceBadge level={d.confidence} />
                     </div>
-                    <SourceQuote
-                      quote={d.source_quote}
-                      speaker={d.source_quote_speaker}
-                      onQuoteClick={d.source_quote ? () => onQuoteClick(d.source_quote) : undefined}
-                    />
+                    <SourceQuote quote={d.source_quote || ''} speaker={d.source_quote_speaker} onQuoteClick={d.source_quote ? () => onQuoteClick(d.source_quote!) : undefined} />
                   </div>
                 </div>
               </div>
@@ -203,12 +324,9 @@ function AnalysisPanel({ aiOutput, onQuoteClick }: {
         </section>
       )}
 
-      {/* Action Items */}
       {action_items.length > 0 && (
         <section>
-          <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-[var(--bb-text-muted)]">
-            Action Items
-          </h3>
+          <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-[var(--bb-text-muted)]">Action Items</h3>
           <div className="space-y-2">
             {action_items.map((a, i) => (
               <div key={a.id} className="rounded-lg border bg-[var(--bb-surface)] px-4 py-3" style={{ borderColor: 'var(--bb-border)' }}>
@@ -218,16 +336,9 @@ function AnalysisPanel({ aiOutput, onQuoteClick }: {
                     <p className="text-sm text-[var(--bb-text-primary)]">{a.task}</p>
                     <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-[var(--bb-text-muted)]">
                       {a.owner && <span>{a.owner}</span>}
-                      {a.deadline && (
-                        <span className="rounded bg-[var(--bb-border-light)] px-1.5 py-0.5">Due: {a.deadline}</span>
-                      )}
-                      <ConfidenceBadge level={a.confidence} />
+                      {a.deadline && <span className="rounded bg-[var(--bb-border-light)] px-1.5 py-0.5">Due: {a.deadline}</span>}
                     </div>
-                    <SourceQuote
-                      quote={a.source_quote}
-                      speaker={a.source_quote_speaker}
-                      onQuoteClick={a.source_quote ? () => onQuoteClick(a.source_quote) : undefined}
-                    />
+                    <SourceQuote quote={a.source_quote || ''} speaker={a.source_quote_speaker} onQuoteClick={a.source_quote ? () => onQuoteClick(a.source_quote!) : undefined} />
                   </div>
                 </div>
               </div>
@@ -236,12 +347,9 @@ function AnalysisPanel({ aiOutput, onQuoteClick }: {
         </section>
       )}
 
-      {/* Open Risks */}
       {open_risks.length > 0 && (
         <section>
-          <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-[var(--bb-text-muted)]">
-            Open Risks
-          </h3>
+          <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-[var(--bb-text-muted)]">Open Risks</h3>
           <div className="space-y-2">
             {open_risks.map((r, i) => (
               <div key={r.id} className="rounded-lg border bg-[var(--bb-surface)] px-4 py-3" style={{ borderColor: 'var(--bb-border)' }}>
@@ -251,13 +359,8 @@ function AnalysisPanel({ aiOutput, onQuoteClick }: {
                     <p className="text-sm text-[var(--bb-text-primary)]">{r.description}</p>
                     <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-[var(--bb-text-muted)]">
                       {r.raised_by && <span>{r.raised_by}</span>}
-                      <ConfidenceBadge level={r.severity} />
                     </div>
-                    <SourceQuote
-                      quote={r.source_quote}
-                      speaker={r.source_quote_speaker}
-                      onQuoteClick={r.source_quote ? () => onQuoteClick(r.source_quote) : undefined}
-                    />
+                    <SourceQuote quote={r.source_quote || ''} speaker={r.source_quote_speaker} onQuoteClick={r.source_quote ? () => onQuoteClick(r.source_quote!) : undefined} />
                   </div>
                 </div>
               </div>
@@ -267,9 +370,7 @@ function AnalysisPanel({ aiOutput, onQuoteClick }: {
       )}
 
       {decisions.length === 0 && action_items.length === 0 && open_risks.length === 0 && (
-        <div className="py-12 text-center text-sm text-[var(--bb-text-muted)]">
-          No analysis items found.
-        </div>
+        <div className="py-12 text-center text-sm text-[var(--bb-text-muted)]">No analysis items found.</div>
       )}
     </div>
   )
