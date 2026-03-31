@@ -440,16 +440,24 @@ EXAMPLE:
 Input: "Alice: I think we should use the new framework.\nBob: Agreed, let's go with React.\nAlice: Bob, can you set up the repo by Friday?\nBob: Sure. My concern is we might not have enough time for testing."
 
 Output:
-{{"decisions": [{{"description": "Use React for the frontend", "made_by": "Bob", "decision_type": "emergent", "confidence": "high", "source_quote": "let's go with React"}}],
-"action_items": [{{"task": "Set up the repository", "owner": "Bob", "deadline": "Friday", "confidence": "high", "source_quote": "can you set up the repo by Friday"}}],
-"risks": [{{"description": "Might not have enough time for testing", "raised_by": "Bob", "severity": "medium", "source_quote": "we might not have enough time for testing"}}]}}
+{{"decisions": [{{"description": "Use React for the frontend", "made_by": "Bob", "decision_type": "emergent", "confidence": "high", "source_quote": "Agreed, let's go with React"}}],
+"action_items": [{{"task": "Set up the repository", "owner": "Bob", "deadline": "Friday", "confidence": "high", "source_quote": "Bob, can you set up the repo by Friday"}}],
+"risks": [{{"description": "Might not have enough time for testing", "raised_by": "Bob", "severity": "medium", "source_quote": "My concern is we might not have enough time for testing"}}]}}
+
+ATTRIBUTION RULES:
+- made_by = the person who ANNOUNCES or FORMULATES the decision ("Let's go with X" / "OK we'll do X")
+- owner = the person who is ASKED to do the task, NOT the person asking. If Alice says "Bob, can you do X?" then owner is Bob, not Alice.
+- raised_by = the person who VOICES the concern
+- source_quote = EXACT words copied from the text above. Do NOT paraphrase or invent quotes.
 
 NOW EXTRACT FROM:
 {context}
 
-Return JSON with decisions, action_items, and risks arrays. Use exact field names from the example above.
-A DECISION = choosing direction, agreeing on approach. An ACTION ITEM = specific task for a specific person.
-Do NOT classify decisions as action items."""
+Return JSON with decisions, action_items, and risks arrays.
+A DECISION = choosing direction, agreeing on approach.
+An ACTION ITEM = specific task for a specific person.
+Do NOT classify decisions as action items.
+Only include items clearly stated in the text."""
 
         try:
             response = client.chat.completions.create(
@@ -636,6 +644,27 @@ def _deduplicate_items(items: list, key_fn, threshold: float = 0.85, owner_fn=No
     return unique
 
 
+def _verify_quote(quote: str, utterances: list[dict]) -> bool:
+    """Check if a source quote exists in any utterance text."""
+    if not quote or len(quote) < 10:
+        return False
+    quote_lower = quote.lower().strip().strip('"').strip("'")
+    all_text = " ".join(u.get("text", "") for u in utterances).lower()
+
+    # Exact match
+    if quote_lower in all_text:
+        return True
+
+    # 4-word sliding window
+    words = quote_lower.split()
+    if len(words) >= 4:
+        for i in range(len(words) - 3):
+            window = " ".join(words[i:i+4])
+            if window in all_text:
+                return True
+    return False
+
+
 def assemble_output(
     extraction: ExtractionResult,
     all_persons: set[str],
@@ -652,7 +681,7 @@ def assemble_output(
     action_items = _deduplicate_items(extraction.action_items, lambda a: a.task, 0.45, lambda a: a.owner)
     risks = _deduplicate_items(extraction.risks, lambda r: r.description, 0.5)
 
-    # Build output
+    # Build output with quote verification
     output = {
         "meeting_metadata": {
             "title": None,
@@ -667,7 +696,12 @@ def assemble_output(
         "trust_flags": [],
     }
 
+    unverified_count = 0
+
     for i, d in enumerate(decisions):
+        verified = _verify_quote(d.source_quote, utterances)
+        if not verified:
+            unverified_count += 1
         output["decisions"].append({
             "id": f"D{i+1}",
             "description": d.description,
@@ -675,10 +709,14 @@ def assemble_output(
             "made_by": d.made_by,
             "confidence": d.confidence,
             "confidence_rationale": "",
-            "source_quote": d.source_quote,
+            "source_quote": d.source_quote if verified else "",
+            "quote_verified": verified,
         })
 
     for i, a in enumerate(action_items):
+        verified = _verify_quote(a.source_quote, utterances)
+        if not verified:
+            unverified_count += 1
         output["action_items"].append({
             "id": f"A{i+1}",
             "task": a.task,
@@ -687,16 +725,21 @@ def assemble_output(
             "commitment_type": "unknown",
             "confidence": a.confidence,
             "confidence_rationale": "",
-            "source_quote": a.source_quote,
+            "source_quote": a.source_quote if verified else "",
+            "quote_verified": verified,
         })
 
     for i, r in enumerate(risks):
+        verified = _verify_quote(r.source_quote, utterances)
+        if not verified:
+            unverified_count += 1
         output["open_risks"].append({
             "id": f"R{i+1}",
             "description": r.description,
             "raised_by": r.raised_by,
             "severity": r.severity,
-            "source_quote": r.source_quote,
+            "source_quote": r.source_quote if verified else "",
+            "quote_verified": verified,
         })
 
     # Generate title + summary with LLM (small call)
@@ -713,6 +756,13 @@ def assemble_output(
         output["trust_flags"].append("Small meeting with limited cross-validation")
     if len(utterances) < 20:
         output["trust_flags"].append("Short transcript")
+    if unverified_count > 0:
+        output["trust_flags"].append(f"{unverified_count} source quote(s) could not be verified against transcript")
+
+    low_conf = sum(1 for d in output["decisions"] if d.get("confidence") == "low")
+    low_conf += sum(1 for a in output["action_items"] if a.get("confidence") == "low")
+    if low_conf > 0:
+        output["trust_flags"].append(f"{low_conf} item(s) have low confidence")
 
     return output
 
