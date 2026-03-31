@@ -17,6 +17,18 @@ from llm_client import analyze_transcript, get_available_providers
 
 router = APIRouter(prefix="/api", tags=["analyze"])
 
+
+def _check_local_llm() -> bool:
+    """Check if a local LLM server (LM Studio/Ollama) is available."""
+    import httpx
+    import os
+    url = os.getenv("LOCAL_LLM_URL", "http://localhost:1234")
+    try:
+        resp = httpx.get(f"{url}/v1/models", timeout=2.0)
+        return resp.status_code == 200
+    except Exception:
+        return False
+
 # Module-level stores for streaming analysis
 _analysis_events: dict[str, queue.Queue] = {}  # meeting_id -> event queue
 _analysis_cancel: dict[str, bool] = {}  # meeting_id -> cancel flag
@@ -103,15 +115,30 @@ async def analyze(request: Request):
         return _analysis_cancel.get(meeting_id, False)
 
     try:
-        from extraction_pipeline import run_extraction_pipeline
-        ai_output = run_extraction_pipeline(
-            meeting_id, raw_transcript, provider=provider,
-            progress_callback=on_progress,
-            entity_callback=on_entities,
-            cancel_check=should_cancel,
-        )
+        # Use hybrid pipeline for local models (much better quality on 7B)
+        # Use original pipeline for cloud models (Gemini handles full prompts well)
+        use_hybrid = provider in (None, "ollama") and _check_local_llm()
+
+        if use_hybrid:
+            from hybrid_pipeline import run_hybrid_pipeline
+            logger.info("Using hybrid pipeline for meeting %s (provider=%s)", meeting_id, provider)
+            ai_output = run_hybrid_pipeline(
+                meeting_id, raw_transcript, provider=provider or "ollama",
+                progress_callback=on_progress,
+                entity_callback=on_entities,
+                cancel_check=should_cancel,
+            )
+        else:
+            from extraction_pipeline import run_extraction_pipeline
+            logger.info("Using standard pipeline for meeting %s (provider=%s)", meeting_id, provider)
+            ai_output = run_extraction_pipeline(
+                meeting_id, raw_transcript, provider=provider,
+                progress_callback=on_progress,
+                entity_callback=on_entities,
+                cancel_check=should_cancel,
+            )
     except Exception as e:
-        logger.warning("Extraction pipeline failed, falling back to single-shot: %s", e)
+        logger.warning("Pipeline failed, falling back to single-shot: %s", e)
         try:
             ai_output = analyze_transcript(utterances, provider=provider)
         except PermissionError as e:

@@ -1,0 +1,326 @@
+Sarah Chen  0:00
+OK so um I think everyone's here now, we've got Mike, Priya, James, and um Tanya should be joining in a sec. So let's just get started. So basically the the main thing today is we need to figure out this deployment situation because honestly it's been kind of a mess and I know Tyler's been asking about it.
+
+Mike Rodriguez  0:28
+Yeah so I was gonna say, um, the the whole thing with the staging environment is that it keeps going down every like three or four hours and nobody really knows why. I spent like half of yesterday looking at the logs and there's these weird memory spikes that happen around 2 AM and then again around like 10 AM which is when everyone starts hitting it.
+
+Sarah Chen  0:52
+Wait is this the same issue that we had last month or is this something new
+
+Mike Rodriguez  0:56
+No this is different, last month was the database connection pooling thing, this is like the actual um the container itself is running out of memory. Like the the pod just gets killed by Kubernetes because it exceeds the limit.
+
+Priya Kapoor  1:15
+So have you looked at whether it's a memory leak or is it just that the limit is set too low? Because I remember when we set those limits it was kind of arbitrary, James do you remember we just picked like 512 megs because that's what the template had?
+
+James Park  1:31
+Yeah that was, I mean that was back when we had like three endpoints, now we've got what, seventeen? And some of those are doing pretty heavy processing, like the report generation one loads the entire dataset into memory which is um probably not great.
+
+Sarah Chen  1:48
+OK so it sounds like we have two problems. The memory limit is too low and also the report endpoint is doing something dumb. Mike can you bump the limit to like 1 gig and see if that stops the crashes?
+
+Mike Rodriguez  2:03
+Yeah I can do that today, it's just a config change in the helm chart.
+
+Sarah Chen  2:08
+And James, can you look at the report endpoint and figure out if we can do streaming or pagination or something instead of loading everything into memory?
+
+James Park  2:17
+Yeah so um I've actually been thinking about this. The problem is the the client expects the full dataset right, like they download it as a CSV. So we can't really paginate the response. But what we could do is generate it asynchronously, like put it in a queue, generate the file, store it in S3, and then send them a link.
+
+Priya Kapoor  2:38
+That's actually a much better approach because right now if someone requests a report for like the last year of data, the endpoint takes like forty five seconds to respond and the load balancer times out anyway.
+
+Sarah Chen  2:50
+OK so James, can you write up a quick proposal for the async approach? Just like a one page thing, doesn't need to be fancy, just so we can review it before you start coding.
+
+James Park  3:01
+Sure, I'll try to have something by end of day Thursday. Actually wait, Thursday I have that thing with the security team so maybe Friday.
+
+Sarah Chen  3:10
+Friday's fine. OK moving on, um Tanya are you here now?
+
+Tanya Williams  3:16
+Yeah sorry I'm late, I was stuck in the standup for the other team. What did I miss?
+
+Sarah Chen  3:22
+We're talking about the staging crashes, Mike's going to bump the memory limits today and James is going to propose an async solution for the report endpoint. But the other thing I wanted to talk about is the authentication migration. Where are we on that?
+
+Tanya Williams  3:38
+So um we're about seventy percent done I'd say. The new OAuth flow is working for the main app and the admin portal. The problem is the mobile API. The the way the mobile app handles tokens is completely different from what the new auth server expects. Like they're using this custom JWT format that our old auth server understood but the new one doesn't.
+
+Mike Rodriguez  4:02
+Wait the mobile app has a custom JWT format? Since when?
+
+Tanya Williams  4:07
+Since like 2022 apparently. Nobody documented it, I only found out because the integration tests started failing. There's this extra claim in the token that has the device ID and the old server would validate it but the new server just rejects the whole token.
+
+James Park  4:24
+That's um that's kind of a big deal because we told the mobile team they wouldn't need to change anything on their end.
+
+Tanya Williams  4:31
+Yeah exactly. So we have basically three options. One, we add custom claim support to the new auth server. Two, we put a translation layer in front of the new server that converts the old format to the new format. Or three, we tell the mobile team they need to update their token handling.
+
+Sarah Chen  4:52
+What's the level of effort for each?
+
+Tanya Williams  4:55
+Um so option one is probably like a week of work, option two is maybe three days but it's kind of hacky and we'd have to maintain it forever, and option three depends entirely on the mobile team's timeline which I think is pretty packed right now.
+
+Priya Kapoor  5:12
+I'd vote for option one honestly. Adding custom claim support is something we'd probably need eventually anyway and it's the cleanest solution. The translation layer is going to become tech debt the moment we ship it.
+
+Mike Rodriguez  5:25
+Yeah I agree, plus if we go with option two and something goes wrong with the translation, debugging is going to be a nightmare because you've got this extra layer that's modifying tokens.
+
+Sarah Chen  5:35
+OK so it sounds like we're leaning toward option one. Tanya can you scope that out properly? Like what exactly needs to change in the auth server?
+
+Tanya Williams  5:44
+Yeah I'll put together a technical spec. Probably Monday? I need to look at the mobile app's token format more carefully first.
+
+Sarah Chen  5:52
+Monday works. Make sure you loop in Raj from the mobile team so he can validate that what you're building will actually work with their token structure.
+
+Tanya Williams  5:59
+Yeah good call, I'll set up a quick call with him tomorrow.
+
+Sarah Chen  6:04
+Great. OK next thing. So I had a meeting with the product team yesterday and they want us to add real time notifications to the dashboard. Like when a report finishes generating or when someone comments on a shared dashboard. The current approach is polling which is just terrible.
+
+Priya Kapoor  6:22
+Are they talking about WebSockets or server-sent events or what?
+
+Sarah Chen  6:26
+They didn't really specify the implementation, they just said they want it to feel instant. But I think WebSockets makes more sense because it's bidirectional, like eventually they're going to want collaborative editing on dashboards and you'd need full duplex for that.
+
+James Park  6:42
+We should be careful about scope creep here though. If we build WebSocket infrastructure for notifications, someone's definitely going to say oh well while you're at it can you add live cursors and collaborative editing and before you know it we're building Google Docs.
+
+Sarah Chen  6:57
+Yeah that's fair. Let's scope it as notifications only for now. Server-sent events might actually be simpler for just notifications since it's one way.
+
+Mike Rodriguez  7:06
+Actually I was gonna say, we already have a Redis pub sub setup for the job queue right? We could just subscribe to events from Redis and push them through SSE. That way we don't need a whole new infrastructure piece.
+
+Priya Kapoor  7:19
+That's a good point. We already have the event bus basically, we just need the last mile delivery to the browser.
+
+Sarah Chen  7:26
+OK so Mike, can you prototype that? Just the SSE endpoint that listens to Redis pub sub and pushes events to the browser. Don't build the whole notification UI or anything, just prove the connection works.
+
+Mike Rodriguez  7:38
+Yeah I can probably have something working by next week. Do we have a specific sprint for this or is this exploratory?
+
+Sarah Chen  7:44
+It's exploratory for now, don't log it as sprint work. I need to get product alignment on the timeline first. They said Q3 but that could mean anything.
+
+James Park  7:54
+Speaking of Q3, we should talk about the database migration. We're still on Postgres 13 and the EOL is coming up. I've been putting together a migration plan and honestly it's not as bad as I thought.
+
+Sarah Chen  8:07
+Oh yeah I keep forgetting about that. What's the plan?
+
+James Park  8:11
+So basically we'd set up a new Postgres 16 instance, use logical replication to sync the data in real time, run both in parallel for like a week to make sure everything's good, then do a cutover during a maintenance window. The trickiest part is some of our extensions, like we use pg_trgm and PostGIS and I need to make sure they're compatible with 16.
+
+Priya Kapoor  8:34
+Have you tested the extensions?
+
+James Park  8:37
+Not yet, that's on my list. I'm like ninety percent sure pg_trgm is fine but PostGIS sometimes has issues with major version bumps.
+
+Tanya Williams  8:46
+We should also check our connection strings and make sure the driver version supports Postgres 16. I remember we had issues last time when we upgraded from like 11 to 13 because the psycopg2 version was too old.
+
+James Park  8:59
+Good point. I'll add that to the checklist. Also we need to decide, do we want to go with 15 or 16? I said 16 earlier but 15 has been out longer and might be more stable.
+
+Sarah Chen  9:10
+Let's go with 16. If we're going to the trouble of migrating we might as well go to the latest. The merge join improvements in 16 would actually help with some of our slower queries.
+
+James Park  9:21
+OK 16 it is. I'll have the full migration plan documented by end of next week. We should probably schedule the actual migration for um maybe late July? That gives us a month of testing.
+
+Sarah Chen  9:33
+Late July works. Put it on the team calendar and send me the plan when it's ready so I can review it before you share it more widely. Last thing I want is is a half baked migration plan going to the director.
+
+Priya Kapoor  9:46
+Can I jump in with something? So I've been looking at our error monitoring and the number of unhandled exceptions has gone up like three hundred percent in the last two weeks. Most of them are coming from the payment processing module.
+
+Sarah Chen  10:00
+Three hundred percent? That's not good. What kind of errors?
+
+Priya Kapoor  10:05
+Mostly timeout errors when we call the payment gateway. I talked to their support and apparently they did a migration on their end two weeks ago, surprise surprise, and their response times went from like 200 milliseconds to sometimes over five seconds. They said it should get better quote unquote soon.
+
+Mike Rodriguez  10:24
+We should probably add retry logic with exponential backoff. Right now if the payment call times out we just throw an error to the user which is really bad UX.
+
+Priya Kapoor  10:33
+Yeah and the problem is sometimes the payment actually went through but we timed out before getting the confirmation. So the user sees an error and tries again and gets double charged. We've had like twelve support tickets about that this week alone.
+
+Sarah Chen  10:47
+OK that's actually critical. Priya can you put in an idempotency check so that even if the user retries, we don't process the same payment twice?
+
+Priya Kapoor  10:56
+Yeah that's what I was thinking. We'd generate an idempotency key on the client side and pass it through, and the payment module would check if we've already processed that key before sending it to the gateway.
+
+James Park  11:09
+Make sure the idempotency key is stored in the database not in memory, because if the server restarts between the first attempt and the retry we'd lose it.
+
+Priya Kapoor  11:18
+Right, good point. I'll use the payments table, add a column for the idempotency key with a unique constraint. That way if someone tries to insert a duplicate the database will reject it.
+
+Sarah Chen  11:29
+How quickly can you get this in? Like I said twelve support tickets in a week is not sustainable.
+
+Priya Kapoor  11:35
+The idempotency check I can probably get in by tomorrow. The retry with backoff is maybe another day. But I'd want to test it pretty thoroughly because you know, payments.
+
+Sarah Chen  11:45
+Absolutely, take the time to test it properly. But the idempotency check should be the priority. Ship that first even if the retry logic comes later.
+
+Tanya Williams  11:54
+Should we also add alerting for this? Like if the payment gateway response time goes above some threshold, we should get notified before it turns into a customer facing issue.
+
+Sarah Chen  12:02
+Yes definitely. We should have had that already honestly. Can you add that to the monitoring dashboard Tanya?
+
+Tanya Williams  12:08
+Yeah I'll set up a PagerDuty alert for payment gateway latency above one second. And maybe a Slack notification for above 500 milliseconds as a warning.
+
+Sarah Chen  12:18
+Perfect. OK so to summarize what we talked about today. Mike is bumping the staging memory limits today. James is writing up the async report proposal by Friday. Tanya is speccing out the custom claim support for the auth server by Monday and calling Raj tomorrow. Mike is also doing the SSE notifications prototype by next week. James is documenting the Postgres 16 migration plan by end of next week. And Priya is shipping the payment idempotency fix tomorrow and the retry logic the day after. Tanya is setting up payment gateway alerting. Did I miss anything?
+
+Mike Rodriguez  12:53
+I don't think so. That's a lot though. Just making sure, the SSE prototype isn't sprint work right? Because I've got the memory fix and a couple bugs from last sprint still.
+
+Sarah Chen  13:01
+Right, the SSE thing is lower priority. Fix the staging memory issue first, deal with your bugs, and then if you have time do the SSE thing. No pressure on that one.
+
+Priya Kapoor  13:12
+Also I just want to flag that the payment gateway issues might get worse before they get better. Their support was very vague about the timeline for their fix. If it's still bad next week we might need to look at switching to a backup gateway.
+
+Sarah Chen  13:25
+That's a good point. James can you research backup payment gateways just in case? Like Stripe or Adyen or whatever. Don't do a full evaluation just yet, just figure out what our options are.
+
+James Park  13:36
+Yeah I can do some research. Fair warning though, switching payment gateways is like a multi-month project. There's PCI compliance stuff and the finance team would need to be involved and all that.
+
+Sarah Chen  13:47
+I know, I'm not saying we're going to switch, just that we should know what's out there if this gets really bad. OK I think that's everything. Um one more thing actually. The team outing. We were supposed to do that escape room thing next Friday but the booking got messed up. Tanya did you sort that out?
+
+Tanya Williams  14:04
+Yeah so the escape room is fully booked for the next three weeks. I found another place that does um like a mystery dinner thing? Same kind of concept, you solve clues and stuff, but you get food. It's called The Detective's Table. It's on Friday at 6, does that work for everyone?
+
+Mike Rodriguez  14:22
+Works for me.
+
+James Park  14:23
+Yeah I'm in.
+
+Priya Kapoor  14:25
+Same.
+
+Sarah Chen  14:26
+Great, book it Tanya. OK that's it for today. Oh wait actually Mike, one more thing. The client demo on Monday, is the staging environment going to be stable enough for that or should we use production?
+
+Mike Rodriguez  14:39
+If I bump the memory today it should be fine. But honestly for a client demo I'd say use production. Staging is called staging for a reason, I don't want to be sweating during the demo.
+
+Sarah Chen  14:50
+Fair point. Let's use production but make sure we've got a rollback plan just in case. Can you freeze deployments to production from Friday afternoon until after the Monday demo?
+
+Mike Rodriguez  14:59
+Yeah I'll put a deploy freeze in the CI pipeline and send a message to the team. No pushes to main from Friday 5 PM to Tuesday morning.
+
+Sarah Chen  15:08
+Perfect. OK for real this time, that's everything. Thanks everyone.
+
+James Park  15:13
+Thanks.
+
+Priya Kapoor  15:14
+Bye.
+
+Tanya Williams  15:15
+See you all tomorrow.
+
+Mike Rodriguez  15:17
+Later.
+
+Sarah Chen  15:30
+Oh wait Priya are you still here?
+
+Priya Kapoor  15:32
+Yeah what's up?
+
+Sarah Chen  15:34
+I forgot to mention, the VP wants a status update on the payment issues by end of day today. Can you write up like a paragraph or two about what's happening and what we're doing about it? Just so I have something to forward to him.
+
+Priya Kapoor  15:46
+Sure, I'll send it to you by 4.
+
+Sarah Chen  15:48
+Thanks. Make sure to mention the idempotency fix and the timeline, he's going to want to know when it's going to stop.
+
+Priya Kapoor  15:54
+Got it. I'll include the gateway's response about their fix timeline too, even though it's vague it's better than nothing.
+
+Sarah Chen  16:00
+Yeah good thinking. OK now I'm actually done. Thanks Priya.
+
+Priya Kapoor  16:04
+No problem, talk later.
+
+Sarah Chen  18:30
+Hey everyone, sorry to ping again. Just wanted to flag something. I just got an email from the compliance team saying our SSL certificates for the staging environment expire in ten days. Mike can you get those renewed? I know we talked about setting up auto-renewal with Let's Encrypt but I don't think we ever actually did it.
+
+Mike Rodriguez  18:52
+Ugh I thought we did set that up. Let me check. OK yeah no, the auto-renewal is set up for production but not staging. I'll renew the staging certs manually today and then set up the Let's Encrypt auto-renewal so we don't have to deal with this again.
+
+Sarah Chen  19:08
+Thanks. Add it to the ops checklist too so we don't forget about any other environments.
+
+Mike Rodriguez  19:14
+Will do. Also while I'm looking at this, the QA environment certs expire in like two weeks too. I'll just do all of them at once.
+
+Sarah Chen  19:22
+Good catch. Thanks Mike.
+
+Sarah Chen  22:00
+One more thing came up. The analytics team wants access to our production database for some machine learning project. They want read-only access to the user activity tables. Before anyone says anything, yes I know this is a terrible idea and no we're not going to give them direct database access.
+
+James Park  22:18
+Thank god. Last time someone got direct database access they accidentally ran a query without a WHERE clause and locked the users table for twenty minutes during peak hours.
+
+Sarah Chen  22:30
+Yeah that was fun. So what I'm thinking is we set up a read replica specifically for analytics queries. That way they can query all they want without affecting production performance. James can you look into setting that up? Probably ties into the Postgres 16 migration anyway.
+
+James Park  22:47
+Yeah actually that's a great idea to do it as part of the migration. When we set up the new Postgres 16 instance we can set up a read replica at the same time. The logical replication is already going to be configured so adding another subscriber is trivial.
+
+Priya Kapoor  23:00
+We should also make sure the analytics team only gets access to the specific tables they need, not the whole database. And definitely not the payments tables or anything with PII.
+
+Sarah Chen  23:12
+Agreed. James, when you document the migration plan include a section about the analytics read replica. List out which tables they get access to, I'll review it with the security team before we give them anything.
+
+James Park  23:24
+Got it. I'll add a section for that. Do we know which specific tables they want?
+
+Sarah Chen  23:30
+Not exactly but it's basically the event tracking stuff. Page views, feature usage, session duration, that kind of thing. Nothing with personal data. I'll get the exact list from their team lead, I think it's Rachel.
+
+James Park  23:43
+OK cool. I'll draft the access control section with placeholder table names and you can fill in the specifics.
+
+Sarah Chen  23:50
+Works for me. I think now we're really actually done. For real this time. No more items I promise.
+
+Mike Rodriguez  23:58
+Famous last words.
+
+Sarah Chen  24:02
+Ha. OK bye everyone.

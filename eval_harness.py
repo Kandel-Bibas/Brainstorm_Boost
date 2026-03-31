@@ -119,7 +119,7 @@ def call_ollama(model: str, prompt: str, system_prompt: str) -> dict:
                 ],
                 "temperature": 0.1,
             },
-            timeout=300.0,
+            timeout=600.0,
         )
         elapsed = time.time() - start
         if resp.status_code != 200:

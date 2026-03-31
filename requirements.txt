@@ -19,6 +19,10 @@ pyannote.audio>=3.0.0
 chromadb>=0.4.0
 sentence-transformers>=2.0
 
+# Hybrid pipeline (local model extraction)
+gliner>=0.2.20
+setfit>=1.1.0
+
 # Audio handling
 sounddevice>=0.4.0
 numpy>=1.24.0
