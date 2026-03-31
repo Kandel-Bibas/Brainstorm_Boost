@@ -212,6 +212,14 @@ TRAINING_EXAMPLES = {
         "Yeah I'll put a deploy freeze in the CI pipeline and send a message to the team.",
         "Priya can you put in an idempotency check so we don't process the same payment twice?",
         "I'll renew the staging certs manually today and then set up Let's Encrypt auto-renewal.",
+        "Great, book it Tanya.",
+        "Sure, I'll send it to you by 4.",
+        "I'll set up a quick call with him tomorrow.",
+        "I'll check with them about that.",
+        "Send me the plan when it's ready.",
+        "Yeah I can do that today.",
+        "Put it on the team calendar.",
+        "Make sure you loop in Raj.",
     ],
     "risk": [
         "The payment gateway issues might get worse before they get better.",
@@ -665,6 +673,202 @@ def _verify_quote(quote: str, utterances: list[dict]) -> bool:
     return False
 
 
+def _parse_timestamp_seconds(ts: str) -> int | None:
+    """Parse a timestamp like '0:00', '05:12', '0:0:5.515', '01:02:17' into seconds."""
+    if not ts:
+        return None
+    ts = ts.strip().strip("()")
+    parts = ts.replace(".", ":").split(":")
+    try:
+        parts = [float(p) for p in parts if p]
+        if len(parts) == 2:
+            return int(parts[0] * 60 + parts[1])
+        elif len(parts) >= 3:
+            return int(parts[0] * 3600 + parts[1] * 60 + parts[2])
+        elif len(parts) == 1:
+            return int(parts[0])
+    except (ValueError, IndexError):
+        pass
+    return None
+
+
+def _estimate_duration(utterances: list[dict]) -> str | None:
+    """Estimate meeting duration from first and last timestamps."""
+    timestamps = []
+    for u in utterances:
+        ts = u.get("timestamp")
+        if ts:
+            secs = _parse_timestamp_seconds(ts)
+            if secs is not None:
+                timestamps.append(secs)
+    if len(timestamps) < 2:
+        return None
+    duration_secs = max(timestamps) - min(timestamps)
+    if duration_secs < 60:
+        return f"{duration_secs} seconds"
+    minutes = duration_secs // 60
+    if minutes < 60:
+        return f"{minutes} min"
+    hours = minutes // 60
+    remaining = minutes % 60
+    return f"{hours}h {remaining}m"
+
+
+def _merge_details(details: list[dict]) -> list[dict]:
+    """Sort details by timestamp and merge entries with duplicate timestamps."""
+    if not details:
+        return details
+
+    # Sort by timestamp
+    def sort_key(d):
+        secs = _parse_timestamp_seconds(d.get("timestamp", ""))
+        return secs if secs is not None else 999999
+
+    details = sorted(details, key=sort_key)
+
+    # Merge entries with same or very close timestamps
+    merged = [details[0]]
+    for d in details[1:]:
+        prev = merged[-1]
+        prev_secs = _parse_timestamp_seconds(prev.get("timestamp", ""))
+        curr_secs = _parse_timestamp_seconds(d.get("timestamp", ""))
+
+        # Merge if same timestamp or titles overlap
+        same_time = prev_secs is not None and curr_secs is not None and abs(prev_secs - curr_secs) < 30
+        title_overlap = False
+        if prev.get("title") and d.get("title"):
+            words_a = set(prev["title"].lower().split())
+            words_b = set(d["title"].lower().split())
+            if words_a and words_b:
+                title_overlap = len(words_a & words_b) / min(len(words_a), len(words_b)) > 0.5
+
+        if same_time or title_overlap:
+            # Merge content
+            prev["content"] = prev.get("content", "") + " " + d.get("content", "")
+            prev["content"] = prev["content"].strip()
+        else:
+            merged.append(d)
+
+    return merged
+
+
+_URGENCY_PATTERNS = [
+    (re.compile(r"\b(double.?charg|overcharg|billing.?error|payment.?fail)", re.IGNORECASE), "Payment/billing issue detected"),
+    (re.compile(r"\b(security|vulnerab|breach|exploit|CVE|comprom)", re.IGNORECASE), "Security concern mentioned"),
+    (re.compile(r"\b(incident|outage|down.?time|crash|p[0-2]\b)", re.IGNORECASE), "Incident/outage discussed"),
+    (re.compile(r"\b(compliance|audit|regulat|GDPR|HIPAA|SOC|PCI)", re.IGNORECASE), "Compliance/regulatory topic"),
+    (re.compile(r"\b(undocument|nobody.?document|no.?one.?document|not.?document)", re.IGNORECASE), "Undocumented system behavior flagged"),
+    (re.compile(r"\b(expir|SSL|certificate|cert.?renew)", re.IGNORECASE), "Certificate/expiration issue"),
+    (re.compile(r"\b(data.?loss|data.?leak|PII|personal.?data)", re.IGNORECASE), "Data sensitivity concern"),
+]
+
+
+def _synthesize_next_steps(next_steps: list[dict], llm_call, persons_list: str) -> list[dict]:
+    """Pass 2: Review all next_steps for contradictions and superseded items."""
+    items_text = "\n".join(
+        f"- [{ns.get('owner', '?')}] {ns.get('action_label', '')}: {ns.get('description', '')}"
+        for ns in next_steps
+    )
+
+    prompt = f"""Review these meeting action items and clean them up.
+
+Participants: {persons_list}
+
+RAW ACTION ITEMS:
+{items_text}
+
+Remove items that:
+1. Were already resolved during the meeting (e.g. "estimate effort for options" when a decision was already made)
+2. Are duplicates of other items (keep the more specific one)
+3. Are not actual commitments (just discussion or observations)
+
+Merge items that describe the same task for the same person.
+
+Return JSON: {{"next_steps": [{{"owner": "person", "action_label": "2-3 word label", "description": "what to do"}}]}}
+
+Keep all genuine action items. Only remove items that are clearly wrong or superseded."""
+
+    try:
+        result = llm_call(prompt)
+        synthesized = result.get("next_steps", [])
+        if synthesized and len(synthesized) >= 3:
+            logger.info("Pass 2 synthesized %d next_steps from %d raw items", len(synthesized), len(next_steps))
+            return synthesized
+    except Exception:
+        logger.exception("Pass 2 next_steps synthesis failed, using raw items")
+
+    return next_steps
+
+
+def _generate_trust_flags(topics: list[dict], next_steps: list[dict], details: list[dict], utterances: list[dict]) -> list[str]:
+    """Scan content for urgency patterns and generate trust flags."""
+    flags = []
+
+    # Combine all text for scanning
+    all_text = " ".join([
+        *[t.get("summary", "") for t in topics],
+        *[ns.get("description", "") for ns in next_steps],
+        *[d.get("content", "") for d in details],
+        *[u.get("text", "") for u in utterances],
+    ])
+
+    for pattern, message in _URGENCY_PATTERNS:
+        if pattern.search(all_text):
+            flags.append(message)
+
+    # Check for short meeting
+    if len(utterances) < 10:
+        flags.append("Very short transcript — extraction may be incomplete")
+
+    return flags
+
+
+def _merge_similar_topics(topics: list[dict]) -> list[dict]:
+    """Merge topics with similar titles by combining their summaries."""
+    if len(topics) <= 1:
+        return topics
+
+    merged = []
+    used = set()
+
+    for i, topic in enumerate(topics):
+        if i in used:
+            continue
+        title_i = topic.get("title", "").lower()
+        words_i = set(title_i.split())
+        combined_summary = topic.get("summary", "")
+        best_title = topic.get("title", "")
+
+        for j in range(i + 1, len(topics)):
+            if j in used:
+                continue
+            title_j = topics[j].get("title", "").lower()
+            words_j = set(title_j.split())
+
+            # Merge if significant word overlap or one is substring of other
+            if words_i and words_j:
+                overlap = len(words_i & words_j) / min(len(words_i), len(words_j))
+            else:
+                overlap = 0
+
+            is_substring = title_i in title_j or title_j in title_i
+
+            if overlap > 0.5 or is_substring:
+                used.add(j)
+                other_summary = topics[j].get("summary", "")
+                if other_summary and other_summary not in combined_summary:
+                    combined_summary += " " + other_summary
+                # Keep the shorter, cleaner title
+                other_title = topics[j].get("title", "")
+                if len(other_title) < len(best_title):
+                    best_title = other_title
+
+        merged.append({"title": best_title, "summary": combined_summary.strip()})
+        used.add(i)
+
+    return merged
+
+
 def assemble_narrative_output(
     utterances: list[dict],
     all_persons: set[str],
@@ -793,14 +997,8 @@ RULES:
     else:
         title = "Meeting"
 
-    # Deduplicate topics and next_steps
-    seen_topics = set()
-    deduped_topics = []
-    for t in all_topics:
-        key = t.get("title", "").lower().strip()
-        if key and key not in seen_topics:
-            seen_topics.add(key)
-            deduped_topics.append(t)
+    # Merge similar topics (e.g. "Auth Migration" + "Auth Server Changes" → one topic)
+    deduped_topics = _merge_similar_topics(all_topics)
 
     deduped_next_steps = _deduplicate_items(
         all_next_steps,
@@ -809,18 +1007,28 @@ RULES:
         lambda ns: ns.get("owner", ""),
     )
 
+    # Pass 2: Synthesize next_steps — resolve contradictions and remove superseded items
+    if deduped_next_steps and len(deduped_next_steps) > 3:
+        deduped_next_steps = _synthesize_next_steps(deduped_next_steps, llm_call, persons_list)
+
+    # Sort and merge details by timestamp
+    all_details = _merge_details(all_details)
+
+    # Calculate duration from timestamps in utterances
+    duration = _estimate_duration(utterances)
+
     return {
         "meeting_metadata": {
             "title": title,
             "date_mentioned": None,
             "participants": sorted(all_persons),
-            "duration_estimate": None,
+            "duration_estimate": duration,
         },
         "summary": summary,
         "topics": deduped_topics,
         "next_steps": deduped_next_steps,
         "details": all_details,
-        "trust_flags": [],
+        "trust_flags": _generate_trust_flags(deduped_topics, deduped_next_steps, all_details, utterances),
     }
 
 
@@ -978,14 +1186,28 @@ def run_hybrid_pipeline(
     # Step 3: Extract entities with GLiNER
     if progress_callback:
         progress_callback("extracting_entities", 0.25, "Extracting names and dates...")
-    utterances, all_persons = extract_entities_gliner(utterances)
-    logger.info("GLiNER extracted %d unique persons: %s", len(all_persons), all_persons)
+    utterances, gliner_persons = extract_entities_gliner(utterances)
+
+    # Separate actual speakers (participants) from mentioned people
+    speakers = set()
+    for u in utterances:
+        s = u.get("speaker", "")
+        if s and s != "Unknown" and _is_real_person(s):
+            speakers.add(s.strip())
+    speakers = _merge_person_names(speakers)
+
+    # All known names (speakers + mentioned) — used for attribution in prompts
+    all_known_names = speakers | gliner_persons
+    all_known_names = _merge_person_names(all_known_names)
+
+    logger.info("Speakers (participants): %s", speakers)
+    logger.info("All known names: %s", all_known_names)
 
     if progress_callback:
-        progress_callback("extracting_entities", 0.3, f"Found {len(all_persons)} participants")
+        progress_callback("extracting_entities", 0.3, f"Found {len(speakers)} participants")
 
     if cancel_check and cancel_check():
-        return {"meeting_metadata": {"title": "Cancelled", "participants": sorted(all_persons)}, "summary": "", "topics": [], "next_steps": [], "details": [], "trust_flags": ["Analysis was cancelled"]}
+        return {"meeting_metadata": {"title": "Cancelled", "participants": sorted(speakers)}, "summary": "", "topics": [], "next_steps": [], "details": [], "trust_flags": ["Analysis was cancelled"]}
 
     # Step 4: Narrative extraction — topics, next steps, details
     if progress_callback:
@@ -993,10 +1215,12 @@ def run_hybrid_pipeline(
 
     output = assemble_narrative_output(
         flagged,
-        all_persons,
+        all_known_names,  # LLM sees all names for attribution
         provider=provider,
         entity_callback=entity_callback,
     )
+    # But participant list only includes actual speakers
+    output["meeting_metadata"]["participants"] = sorted(speakers)
 
     elapsed = time.time() - start_time
     if progress_callback:
